@@ -122,7 +122,7 @@ function BackgroundImageOverlay() {
   return (
     <div className="absolute z-0 top-0 left-0 w-full h-full">
       <div
-        className="absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
+        className="lg-bg-image absolute top-0 left-0 w-full h-full bg-cover bg-center bg-no-repeat"
         style={{
           backgroundImage: `
           url("${imageUrl.replace(/"/g, '%22')}")
@@ -408,7 +408,7 @@ function Root() {
             }}
           >
             <Box
-              className={`h-full overflow-hidden border-[0.5px] border-solid border-chatbox-border-primary ${
+              className={`lg-main-panel h-full overflow-hidden border-[0.5px] border-solid border-chatbox-border-primary ${
                 hasBackgroundImage ? 'bg-transparent' : 'bg-chatbox-background-primary'
               }`}
               sx={{

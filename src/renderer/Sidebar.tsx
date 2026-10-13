@@ -170,7 +170,7 @@ export default function Sidebar() {
         gap={0}
         pt="var(--mobile-safe-area-inset-top, 0px)"
         pb="var(--mobile-safe-area-inset-bottom, 0px)"
-        className="relative"
+        className="lg-sidebar relative"
       >
         {needRoomForMacWindowControls && <Box className="title-bar flex-[0_0_44px]" />}
         <Flex align="center" justify="space-between" gap="xs" px="md" py="sm" className="border-0">

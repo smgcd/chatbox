@@ -15,6 +15,8 @@ import reportWebVitals from './reportWebVitals'
 import { router } from './router'
 import './static/globals.css'
 import './static/index.css'
+// cd 定制：Liquid Glass 外观层（放在最后，优先级最高，可整体覆盖前面的样式）
+import './static/liquid-glass.css'
 import { initLogAtom, migrationProcessAtom } from './stores/atoms/utilAtoms'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
 

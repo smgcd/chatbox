@@ -1,0 +1,568 @@
+/* ============================================================================
+ * Chatbox · Liquid Glass 外观层（cd 定制）
+ * ----------------------------------------------------------------------------
+ * 设计基调：Apple「Liquid Glass」——半透明材质 + 背景模糊 + 高光边缘 +
+ * 柔和多层阴影 + 大圆角 + 克制的弹性动效。
+ *
+ * 只做「外观覆盖」，不改任何业务逻辑：
+ *   1. 铺一层可透的彩色光晕底板（玻璃后面要有东西可透，才有"液体"感）
+ *   2. 把 chatbox 的语义背景变量改写成半透明玻璃色
+ *   3. 给 Mantine / MUI 的容器与控件套上玻璃材质
+ *   4. 统一动效曲线，让 hover / 按下 / 弹窗出场都"优雅"
+ *
+ * 一键关闭：给 <html> 加 data-lg="off" 即可整体退回原生外观。
+ * ========================================================================== */
+
+/* ---------------------------------------------------------------------------
+ * 1. 设计令牌
+ * ------------------------------------------------------------------------- */
+:root {
+  --lg-blur: 30px;
+  --lg-saturate: 1.7;
+  --lg-radius: 14px;
+  --lg-radius-lg: 20px;
+  --lg-radius-xl: 26px;
+  --lg-radius-pill: 999px;
+
+  /* Apple 风格的缓动曲线（快出慢入、带一点"顺滑"） */
+  --lg-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --lg-ease-soft: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --lg-dur: 240ms;
+  --lg-dur-slow: 380ms;
+
+  /* 文字排版微调 —— 苹果更紧凑的字距 */
+  --lg-tracking: -0.006em;
+}
+
+/* ---- 浅色：玻璃材质 ---- */
+:root,
+:root[data-mantine-color-scheme='light'] {
+  --lg-base: #e6ebf5;
+  --lg-glow-1: rgba(84, 138, 255, 0.78);
+  --lg-glow-2: rgba(228, 118, 255, 0.66);
+  --lg-glow-3: rgba(70, 224, 205, 0.64);
+  --lg-glow-4: rgba(255, 182, 122, 0.56);
+
+  --lg-surface-1: rgba(255, 255, 255, 0.52);
+  --lg-surface-2: rgba(255, 255, 255, 0.38);
+  --lg-surface-3: rgba(255, 255, 255, 0.24);
+  --lg-surface-solid: rgba(250, 251, 255, 0.82);
+
+  --lg-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.5) 0%,
+    rgba(255, 255, 255, 0.12) 42%,
+    rgba(255, 255, 255, 0) 100%
+  );
+
+  --lg-hairline: rgba(255, 255, 255, 0.72);
+  --lg-stroke: rgba(16, 24, 40, 0.09);
+  --lg-stroke-strong: rgba(16, 24, 40, 0.16);
+
+  --lg-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(255, 255, 255, 0.28);
+  --lg-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 4px 14px rgba(16, 24, 40, 0.06);
+  --lg-shadow-md: 0 8px 28px rgba(16, 24, 40, 0.1), 0 2px 8px rgba(16, 24, 40, 0.06);
+  --lg-shadow-lg: 0 26px 64px rgba(16, 24, 40, 0.16), 0 8px 20px rgba(16, 24, 40, 0.08);
+
+  --lg-text-soft: rgba(30, 41, 59, 0.72);
+  --lg-hover-tint: rgba(255, 255, 255, 0.55);
+  --lg-active-tint: rgba(255, 255, 255, 0.72);
+}
+
+/* ---- 深色：玻璃材质 ---- */
+:root[data-mantine-color-scheme='dark'],
+html[data-theme='dark'] {
+  --lg-base: #0b0c11;
+  --lg-glow-1: rgba(56, 108, 232, 0.62);
+  --lg-glow-2: rgba(140, 66, 220, 0.55);
+  --lg-glow-3: rgba(20, 158, 148, 0.48);
+  --lg-glow-4: rgba(214, 96, 62, 0.4);
+
+  --lg-surface-1: rgba(30, 32, 41, 0.5);
+  --lg-surface-2: rgba(42, 44, 55, 0.42);
+  --lg-surface-3: rgba(255, 255, 255, 0.06);
+  --lg-surface-solid: rgba(26, 28, 35, 0.86);
+
+  --lg-sheen: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.025) 42%,
+    rgba(255, 255, 255, 0) 100%
+  );
+
+  --lg-hairline: rgba(255, 255, 255, 0.13);
+  --lg-stroke: rgba(255, 255, 255, 0.09);
+  --lg-stroke-strong: rgba(255, 255, 255, 0.16);
+
+  --lg-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.25);
+  --lg-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.3);
+  --lg-shadow-md: 0 10px 32px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(0, 0, 0, 0.3);
+  --lg-shadow-lg: 0 30px 72px rgba(0, 0, 0, 0.6), 0 10px 24px rgba(0, 0, 0, 0.4);
+
+  --lg-text-soft: rgba(226, 232, 240, 0.7);
+  --lg-hover-tint: rgba(255, 255, 255, 0.07);
+  --lg-active-tint: rgba(255, 255, 255, 0.12);
+}
+
+/* ---------------------------------------------------------------------------
+ * 2. 底板：可透的彩色光晕（玻璃"液体"的来源）
+ * ------------------------------------------------------------------------- */
+html:not([data-lg='off']) {
+  background-color: var(--lg-base);
+  background-image:
+    radial-gradient(46% 42% at 12% 6%, var(--lg-glow-1) 0%, transparent 62%),
+    radial-gradient(44% 40% at 92% 4%, var(--lg-glow-2) 0%, transparent 60%),
+    radial-gradient(52% 46% at 80% 96%, var(--lg-glow-3) 0%, transparent 62%),
+    radial-gradient(50% 46% at 6% 92%, var(--lg-glow-4) 0%, transparent 60%);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+}
+
+/* body 交给玻璃面板自己呈现，避免雾化背景光晕 */
+html:not([data-lg='off']) body {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* 极细颗粒，消掉渐变的"数码带"，增加材质真实感 */
+html:not([data-lg='off'])::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  pointer-events: none;
+  opacity: 0.42;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+}
+
+html[data-theme='dark']:not([data-lg='off']) {
+  background-color: var(--lg-base);
+}
+
+/* ---------------------------------------------------------------------------
+ * 3. 把 chatbox 的语义背景改写成玻璃色（玻璃质感的根）
+ * ------------------------------------------------------------------------- */
+:root:not([data-lg='off']) {
+  --chatbox-background-primary: var(--lg-surface-1) !important;
+  --chatbox-background-primary-hover: var(--lg-surface-2) !important;
+  --chatbox-background-secondary: var(--lg-surface-2) !important;
+  --chatbox-background-secondary-hover: var(--lg-surface-1) !important;
+  --chatbox-background-tertiary: var(--lg-surface-3) !important;
+  --chatbox-background-tertiary-hover: var(--lg-hover-tint) !important;
+  --chatbox-background-disabled: var(--lg-surface-3) !important;
+
+  --chatbox-border-primary: var(--lg-stroke) !important;
+  --chatbox-border-secondary: var(--lg-stroke-strong) !important;
+
+  /* shadcn 语义层 */
+  --background: transparent !important;
+  --card: var(--lg-surface-1) !important;
+  --popover: var(--lg-surface-solid) !important;
+  --border: var(--lg-stroke) !important;
+  --input: var(--lg-stroke) !important;
+
+  /* Mantine 内部用的 body / 边框变量 */
+  --mantine-color-body: var(--lg-surface-1) !important;
+  --mantine-color-default-border: var(--lg-stroke) !important;
+  --mantine-color-default-hover: var(--lg-surface-2) !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * 4. 排版与基础观感
+ * ------------------------------------------------------------------------- */
+html:not([data-lg='off']) body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Segoe UI Variable Display',
+    'Segoe UI', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', Roboto, Helvetica,
+    Arial, sans-serif;
+  letter-spacing: var(--lg-tracking);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+html:not([data-lg='off']) ::selection {
+  background: color-mix(in srgb, var(--chatbox-tint-brand) 30%, transparent);
+}
+
+/* 更细致、半透明的滚动条 */
+html:not([data-lg='off']) ::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+html:not([data-lg='off']) ::-webkit-scrollbar-thumb {
+  background-color: color-mix(in srgb, var(--chatbox-tint-tertiary) 45%, transparent);
+  border: 4px solid transparent;
+  border-radius: 9999px;
+  background-clip: content-box;
+  transition: background-color var(--lg-dur) var(--lg-ease-soft);
+}
+
+html:not([data-lg='off']) ::-webkit-scrollbar-thumb:hover {
+  background-color: color-mix(in srgb, var(--chatbox-tint-secondary) 70%, transparent);
+}
+
+/* 柔和的焦点环 */
+html:not([data-lg='off']) :focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--chatbox-tint-brand) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+ * 5. 主框架：App / 侧栏 / 主内容面板
+ * ------------------------------------------------------------------------- */
+html:not([data-lg='off']) .App,
+html:not([data-lg='off']) #root {
+  background: transparent !important;
+}
+
+/* 主内容卡片 */
+html:not([data-lg='off']) .lg-main-panel {
+  background-color: var(--lg-surface-1) !important;
+  background-image: var(--lg-sheen);
+  border: 1px solid var(--lg-stroke) !important;
+  border-radius: var(--lg-radius-xl) !important;
+  box-shadow: var(--lg-highlight), var(--lg-shadow-md) !important;
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  transition: box-shadow var(--lg-dur-slow) var(--lg-ease), border-color var(--lg-dur) var(--lg-ease-soft);
+}
+
+/* 侧栏（MUI Drawer 的纸面） */
+html:not([data-lg='off']) .lg-sidebar {
+  background-color: var(--lg-surface-2) !important;
+  background-image: var(--lg-sheen);
+  border-radius: var(--lg-radius-xl);
+  margin: 8px 0 8px 8px;
+  height: calc(100% - 16px) !important;
+  border: 1px solid var(--lg-stroke);
+  box-shadow: var(--lg-highlight), var(--lg-shadow-sm);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  overflow: hidden;
+}
+
+/* 有自定义背景图时，让主面板更"透"，玻璃感更强 */
+html:not([data-lg='off']) .App:has(.lg-bg-image) .lg-main-panel {
+  background-color: color-mix(in srgb, var(--lg-surface-1) 76%, transparent) !important;
+}
+html:not([data-lg='off']) .App:has(.lg-bg-image) .lg-sidebar {
+  background-color: color-mix(in srgb, var(--lg-surface-2) 80%, transparent) !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * 6. Mantine 组件
+ * ------------------------------------------------------------------------- */
+
+/* ---- 通用容器：Paper / Card ---- */
+html:not([data-lg='off']) .mantine-Paper-root,
+html:not([data-lg='off']) .mantine-Card-root {
+  background-color: var(--lg-surface-1);
+  background-image: var(--lg-sheen);
+  border: 1px solid var(--lg-stroke);
+  box-shadow: var(--lg-highlight), var(--lg-shadow-sm);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+}
+
+/* ---- 弹窗 / 抽屉 / 下拉：更厚的玻璃 + 出场动画 ---- */
+html:not([data-lg='off']) .mantine-Modal-content,
+html:not([data-lg='off']) .mantine-Drawer-content {
+  background-color: var(--lg-surface-solid) !important;
+  background-image: var(--lg-sheen);
+  border: 1px solid var(--lg-stroke) !important;
+  border-radius: var(--lg-radius-xl) !important;
+  box-shadow: var(--lg-highlight), var(--lg-shadow-lg) !important;
+  backdrop-filter: blur(38px) saturate(1.9);
+  -webkit-backdrop-filter: blur(38px) saturate(1.9);
+  animation: lg-pop var(--lg-dur-slow) var(--lg-ease) both;
+}
+
+html:not([data-lg='off']) .mantine-Modal-header,
+html:not([data-lg='off']) .mantine-Drawer-header {
+  background: transparent !important;
+}
+
+html:not([data-lg='off']) .mantine-Modal-overlay,
+html:not([data-lg='off']) .mantine-Drawer-overlay {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+html:not([data-lg='off']) .mantine-Menu-dropdown,
+html:not([data-lg='off']) .mantine-Popover-dropdown,
+html:not([data-lg='off']) .mantine-Combobox-dropdown {
+  background-color: var(--lg-surface-solid) !important;
+  background-image: var(--lg-sheen);
+  border: 1px solid var(--lg-stroke) !important;
+  border-radius: var(--lg-radius-lg) !important;
+  box-shadow: var(--lg-highlight), var(--lg-shadow-lg) !important;
+  backdrop-filter: blur(34px) saturate(1.9);
+  -webkit-backdrop-filter: blur(34px) saturate(1.9);
+  animation: lg-pop var(--lg-dur) var(--lg-ease) both;
+  overflow: hidden;
+}
+
+html:not([data-lg='off']) .mantine-Menu-item,
+html:not([data-lg='off']) .mantine-Combobox-option {
+  border-radius: 10px;
+  transition: background-color var(--lg-dur) var(--lg-ease-soft), transform 120ms var(--lg-ease);
+}
+
+html:not([data-lg='off']) .mantine-Menu-item:hover,
+html:not([data-lg='off']) .mantine-Combobox-option:hover,
+html:not([data-lg='off']) .mantine-Combobox-option[data-combobox-selected] {
+  background: var(--lg-hover-tint);
+}
+
+/* ---- 提示气泡 ---- */
+html:not([data-lg='off']) .mantine-Tooltip-tooltip {
+  background-color: var(--lg-surface-solid) !important;
+  border: 1px solid var(--lg-stroke);
+  border-radius: 10px;
+  box-shadow: var(--lg-highlight), var(--lg-shadow-md);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  color: var(--chatbox-tint-primary);
+  font-size: 12px;
+}
+
+/* ---- 按钮 / 图标按钮 ---- */
+html:not([data-lg='off']) .mantine-Button-root,
+html:not([data-lg='off']) .mantine-ActionIcon-root {
+  transition: transform 140ms var(--lg-ease), box-shadow var(--lg-dur) var(--lg-ease-soft),
+    background-color var(--lg-dur) var(--lg-ease-soft), border-color var(--lg-dur) var(--lg-ease-soft);
+}
+
+html:not([data-lg='off']) .mantine-Button-root:active,
+html:not([data-lg='off']) .mantine-ActionIcon-root:active {
+  transform: scale(0.965);
+}
+
+/* 实心按钮 + 玻璃高光与轻微投影，按下回弹 */
+html:not([data-lg='off']) .mantine-Button-root[data-variant='filled'],
+html:not([data-lg='off']) .mantine-Button-root:not([data-variant]) {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 2px 8px color-mix(in srgb, var(--chatbox-tint-brand) 35%, transparent);
+}
+
+html:not([data-lg='off']) .mantine-Button-root[data-variant='filled']:hover,
+html:not([data-lg='off']) .mantine-Button-root:not([data-variant]):hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 6px 18px color-mix(in srgb, var(--chatbox-tint-brand) 42%, transparent);
+}
+
+html:not([data-lg='off']) .mantine-Button-root[data-variant='light'],
+html:not([data-lg='off']) .mantine-Button-root[data-variant='default'] {
+  border: 1px solid var(--lg-stroke);
+  box-shadow: var(--lg-highlight), var(--lg-shadow-sm);
+  backdrop-filter: blur(18px) saturate(1.6);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+}
+
+html:not([data-lg='off']) .mantine-Button-root[data-variant='light']:hover,
+html:not([data-lg='off']) .mantine-Button-root[data-variant='default']:hover {
+  transform: translateY(-1px);
+}
+
+/* ---- 侧栏 / 导航项 ---- */
+html:not([data-lg='off']) .mantine-NavLink-root {
+  border-radius: var(--lg-radius);
+  transition: background-color var(--lg-dur) var(--lg-ease-soft), transform 140ms var(--lg-ease);
+}
+
+html:not([data-lg='off']) .mantine-NavLink-root:hover {
+  background: var(--lg-hover-tint);
+}
+
+html:not([data-lg='off']) .mantine-NavLink-root[data-active] {
+  background: var(--lg-active-tint);
+  box-shadow: var(--lg-highlight);
+}
+
+/* ---- 输入控件 ---- */
+html:not([data-lg='off']) .mantine-Input-input,
+html:not([data-lg='off']) .mantine-TextInput-input,
+html:not([data-lg='off']) .mantine-Textarea-input,
+html:not([data-lg='off']) .mantine-Select-input,
+html:not([data-lg='off']) .mantine-NumberInput-input,
+html:not([data-lg='off']) .mantine-Autocomplete-input {
+  background: var(--lg-surface-2);
+  border: 1px solid var(--lg-stroke);
+  border-radius: var(--lg-radius);
+  box-shadow: var(--lg-highlight);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  transition: border-color var(--lg-dur) var(--lg-ease-soft), box-shadow var(--lg-dur) var(--lg-ease-soft),
+    background-color var(--lg-dur) var(--lg-ease-soft);
+}
+
+html:not([data-lg='off']) .mantine-Input-input:focus,
+html:not([data-lg='off']) .mantine-TextInput-input:focus,
+html:not([data-lg='off']) .mantine-Textarea-input:focus,
+html:not([data-lg='off']) .mantine-Select-input:focus,
+html:not([data-lg='off']) .mantine-Autocomplete-input:focus {
+  border-color: color-mix(in srgb, var(--chatbox-tint-brand) 60%, transparent);
+  box-shadow: var(--lg-highlight), 0 0 0 3px color-mix(in srgb, var(--chatbox-tint-brand) 18%, transparent);
+}
+
+/* ---- 分段控件 / 滑块 / 开关 ---- */
+html:not([data-lg='off']) .mantine-SegmentedControl-root {
+  background: var(--lg-surface-3);
+  border: 1px solid var(--lg-stroke);
+  border-radius: var(--lg-radius-pill);
+  padding: 3px;
+  backdrop-filter: blur(14px) saturate(1.6);
+  -webkit-backdrop-filter: blur(14px) saturate(1.6);
+}
+
+html:not([data-lg='off']) .mantine-SegmentedControl-indicator {
+  background-color: var(--lg-surface-solid);
+  background-image: var(--lg-sheen);
+  box-shadow: var(--lg-highlight), var(--lg-shadow-sm);
+  border-radius: var(--lg-radius-pill);
+  transition: transform var(--lg-dur) var(--lg-ease);
+}
+
+html:not([data-lg='off']) .mantine-SegmentedControl-label {
+  transition: color var(--lg-dur) var(--lg-ease-soft);
+}
+
+/* ---- Spotlight（全局搜索） ---- */
+html:not([data-lg='off']) .mantine-Spotlight-content,
+html:not([data-lg='off']) .mantine-Spotlight-search {
+  background-color: var(--lg-surface-solid);
+  background-image: var(--lg-sheen);
+  backdrop-filter: blur(34px) saturate(1.9);
+  -webkit-backdrop-filter: blur(34px) saturate(1.9);
+}
+
+/* ---- 通知 / 提示条 ---- */
+html:not([data-lg='off']) .mantine-Notification-root,
+html:not([data-lg='off']) .mantine-Alert-root {
+  background-color: var(--lg-surface-solid);
+  background-image: var(--lg-sheen);
+  border: 1px solid var(--lg-stroke);
+  border-radius: var(--lg-radius-lg);
+  box-shadow: var(--lg-highlight), var(--lg-shadow-md);
+  backdrop-filter: blur(28px) saturate(1.8);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+}
+
+/* ---------------------------------------------------------------------------
+ * 7. MUI 组件（Drawer / Dialog / Menu / Popover / Snackbar / Tooltip）
+ * ------------------------------------------------------------------------- */
+html:not([data-lg='off']) .MuiPaper-root {
+  background-image: none !important;
+}
+
+html:not([data-lg='off']) .MuiDrawer-paper {
+  background-color: var(--lg-surface-2) !important;
+  background-image: var(--lg-sheen) !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+}
+
+html:not([data-lg='off']) .MuiDialog-paper,
+html:not([data-lg='off']) .MuiMenu-paper,
+html:not([data-lg='off']) .MuiPopover-paper {
+  background-color: var(--lg-surface-solid) !important;
+  background-image: var(--lg-sheen) !important;
+  border: 1px solid var(--lg-stroke) !important;
+  border-radius: var(--lg-radius-xl) !important;
+  box-shadow: var(--lg-highlight), var(--lg-shadow-lg) !important;
+  backdrop-filter: blur(34px) saturate(1.9);
+  -webkit-backdrop-filter: blur(34px) saturate(1.9);
+}
+
+html:not([data-lg='off']) .MuiMenuItem-root,
+html:not([data-lg='off']) .MuiListItemButton-root {
+  border-radius: 10px;
+  transition: background-color var(--lg-dur) var(--lg-ease-soft);
+}
+
+html:not([data-lg='off']) .MuiSnackbarContent-root {
+  background-color: var(--lg-surface-solid) !important;
+  color: var(--chatbox-tint-primary) !important;
+  border: 1px solid var(--lg-stroke);
+  border-radius: var(--lg-radius-lg) !important;
+  box-shadow: var(--lg-highlight), var(--lg-shadow-md) !important;
+  backdrop-filter: blur(28px) saturate(1.8);
+  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+}
+
+html:not([data-lg='off']) .MuiTooltip-tooltip {
+  background-color: var(--lg-surface-solid) !important;
+  color: var(--chatbox-tint-primary) !important;
+  border: 1px solid var(--lg-stroke);
+  border-radius: 8px !important;
+  box-shadow: var(--lg-highlight), var(--lg-shadow-sm);
+  backdrop-filter: blur(18px) saturate(1.7);
+  -webkit-backdrop-filter: blur(18px) saturate(1.7);
+}
+
+html:not([data-lg='off']) .MuiBackdrop-root {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+/* ---------------------------------------------------------------------------
+ * 8. 动效："交互优雅"
+ * ------------------------------------------------------------------------- */
+@keyframes lg-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.965) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes lg-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 会话列表项入场更柔和 */
+html:not([data-lg='off']) .sidebar-session-list > * {
+  animation: lg-fade-up var(--lg-dur) var(--lg-ease) both;
+}
+
+/* 尊重系统的"减少动态效果" */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-lg='off']) *,
+  html:not([data-lg='off']) *::before,
+  html:not([data-lg='off']) *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * 9. 细节微调
+ * ------------------------------------------------------------------------- */
+/* 标题栏与顶栏保持通透 */
+html:not([data-lg='off']) .ToolBar {
+  background-color: transparent !important;
+}
+
+/* 分隔线降低硬度，更接近苹果的 hairline */
+html:not([data-lg='off']) hr,
+html:not([data-lg='off']) .mantine-Divider-root {
+  border-color: var(--lg-stroke) !important;
+}
+
+/* KaTeX 滚动条配色跟随玻璃 */
+html:not([data-lg='off']) .katex-display::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--chatbox-tint-tertiary) 40%, transparent);
+}
