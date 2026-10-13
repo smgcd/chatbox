@@ -98,8 +98,8 @@ function buildDisplacementMap(el: HTMLElement, w: number, h: number) {
   const radius = Math.max(0, Math.min(radiusRaw, Math.min(w, h) / 2))
   // 折射影响带宽度：越小的元素带越窄
   const band = Math.max(10, Math.min(30, Math.min(w, h) * 0.09))
-  // 峰值位移随尺寸轻微缩放，避免大面板边缘"糊"
-  const peak = Math.max(4, Math.min(12, Math.min(w, h) * 0.05))
+  // 峰值位移随尺寸轻微缩放；太大边缘会"糊"，太小看不出折射
+  const peak = Math.max(6, Math.min(16, Math.min(w, h) * 0.06))
 
   const k = Math.min(1, MAP_MAX_W / w)
   const cw = Math.max(2, Math.round(w * k))
@@ -152,9 +152,10 @@ function buildDisplacementMap(el: HTMLElement, w: number, h: number) {
 
 function applyBackdropFilter(el: HTMLElement, id: string) {
   const cs = getComputedStyle(el)
-  const blur = (cs.getPropertyValue('--lg-blur') || '24px').trim() || '24px'
-  const saturate = (cs.getPropertyValue('--lg-saturate') || '1.6').trim() || '1.6'
-  const value = `url(#${id}) blur(${blur}) saturate(${saturate})`
+  const blur = (cs.getPropertyValue('--lg-blur') || '9px').trim() || '9px'
+  const saturate = (cs.getPropertyValue('--lg-saturate') || '1.55').trim() || '1.55'
+  // 真实液态玻璃：模糊很轻 + 亮度/饱和微调，背景清晰透出，只靠折射与边缘高光立形
+  const value = `url(#${id}) blur(${blur}) saturate(${saturate}) brightness(1.06)`
   el.style.setProperty('backdrop-filter', value)
   el.style.setProperty('-webkit-backdrop-filter', value)
 }

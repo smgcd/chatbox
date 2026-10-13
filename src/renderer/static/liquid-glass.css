@@ -17,8 +17,8 @@
  * 1. 设计令牌
  * ------------------------------------------------------------------------- */
 :root {
-  --lg-blur: 20px;
-  --lg-saturate: 1.9;
+  --lg-blur: 9px;
+  --lg-saturate: 1.55;
   --lg-radius: 14px;
   --lg-radius-lg: 20px;
   --lg-radius-xl: 26px;
@@ -43,15 +43,15 @@
   --lg-glow-3: rgba(70, 224, 205, 0.5);
   --lg-glow-4: rgba(255, 182, 122, 0.44);
 
-  --lg-surface-1: rgba(255, 255, 255, 0.4);
-  --lg-surface-2: rgba(255, 255, 255, 0.28);
-  --lg-surface-3: rgba(255, 255, 255, 0.18);
-  --lg-surface-solid: rgba(250, 251, 255, 0.66);
+  --lg-surface-1: rgba(255, 255, 255, 0.08);
+  --lg-surface-2: rgba(255, 255, 255, 0.05);
+  --lg-surface-3: rgba(255, 255, 255, 0.04);
+  --lg-surface-solid: rgba(250, 251, 255, 0.3);
 
   --lg-sheen: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.5) 0%,
-    rgba(255, 255, 255, 0.12) 42%,
+    rgba(255, 255, 255, 0.2) 0%,
+    rgba(255, 255, 255, 0.04) 40%,
     rgba(255, 255, 255, 0) 100%
   );
 
@@ -59,11 +59,11 @@
   --lg-stroke: rgba(16, 24, 40, 0.09);
   --lg-stroke-strong: rgba(16, 24, 40, 0.16);
 
-  --lg-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(255, 255, 255, 0.4),
-    inset 1px 0 0 rgba(255, 255, 255, 0.55), inset -1px 0 0 rgba(255, 255, 255, 0.55);
+  --lg-highlight: inset 0 0 0 1px rgba(255, 255, 255, 0.72), inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.3);
   --lg-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 4px 14px rgba(16, 24, 40, 0.06);
-  --lg-shadow-md: 0 8px 28px rgba(16, 24, 40, 0.1), 0 2px 8px rgba(16, 24, 40, 0.06);
-  --lg-shadow-lg: 0 26px 64px rgba(16, 24, 40, 0.16), 0 8px 20px rgba(16, 24, 40, 0.08);
+  --lg-shadow-md: 0 10px 36px rgba(16, 24, 40, 0.16), 0 3px 10px rgba(16, 24, 40, 0.08);
+  --lg-shadow-lg: 0 28px 68px rgba(16, 24, 40, 0.2), 0 10px 24px rgba(16, 24, 40, 0.1);
 
   --lg-text-soft: rgba(30, 41, 59, 0.72);
   --lg-hover-tint: rgba(255, 255, 255, 0.55);
@@ -79,15 +79,15 @@ html[data-theme='dark'] {
   --lg-glow-3: rgba(20, 158, 148, 0.48);
   --lg-glow-4: rgba(214, 96, 62, 0.4);
 
-  --lg-surface-1: rgba(30, 32, 41, 0.4);
-  --lg-surface-2: rgba(42, 44, 55, 0.32);
-  --lg-surface-3: rgba(255, 255, 255, 0.05);
-  --lg-surface-solid: rgba(26, 28, 35, 0.7);
+  --lg-surface-1: rgba(18, 20, 27, 0.22);
+  --lg-surface-2: rgba(22, 25, 33, 0.16);
+  --lg-surface-3: rgba(255, 255, 255, 0.035);
+  --lg-surface-solid: rgba(20, 22, 29, 0.42);
 
   --lg-sheen: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.1) 0%,
-    rgba(255, 255, 255, 0.025) 42%,
+    rgba(255, 255, 255, 0.07) 0%,
+    rgba(255, 255, 255, 0.015) 40%,
     rgba(255, 255, 255, 0) 100%
   );
 
@@ -95,11 +95,11 @@ html[data-theme='dark'] {
   --lg-stroke: rgba(255, 255, 255, 0.09);
   --lg-stroke-strong: rgba(255, 255, 255, 0.16);
 
-  --lg-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.3),
-    inset 1px 0 0 rgba(255, 255, 255, 0.07), inset -1px 0 0 rgba(255, 255, 255, 0.07);
+  --lg-highlight: inset 0 0 0 1px rgba(255, 255, 255, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.24);
   --lg-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.3);
-  --lg-shadow-md: 0 10px 32px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(0, 0, 0, 0.3);
-  --lg-shadow-lg: 0 30px 72px rgba(0, 0, 0, 0.6), 0 10px 24px rgba(0, 0, 0, 0.4);
+  --lg-shadow-md: 0 12px 40px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.34);
+  --lg-shadow-lg: 0 32px 76px rgba(0, 0, 0, 0.62), 0 12px 26px rgba(0, 0, 0, 0.42);
 
   --lg-text-soft: rgba(226, 232, 240, 0.7);
   --lg-hover-tint: rgba(255, 255, 255, 0.07);
@@ -602,10 +602,10 @@ html:not([data-lg='off']) .MuiPopover-paper::after {
   padding: 1px;
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.92) 0%,
-    rgba(255, 255, 255, 0.22) 30%,
-    rgba(255, 255, 255, 0) 55%,
-    rgba(255, 255, 255, 0.4) 100%
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(255, 255, 255, 0.3) 35%,
+    rgba(255, 255, 255, 0.26) 65%,
+    rgba(255, 255, 255, 0.6) 100%
   );
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
@@ -627,9 +627,9 @@ html[data-mantine-color-scheme='dark']:not([data-lg='off']) .MuiMenu-paper::afte
 html[data-mantine-color-scheme='dark']:not([data-lg='off']) .MuiPopover-paper::after {
   background: linear-gradient(
     135deg,
-    rgba(255, 255, 255, 0.38) 0%,
-    rgba(255, 255, 255, 0.07) 32%,
-    rgba(255, 255, 255, 0) 60%,
-    rgba(255, 255, 255, 0.14) 100%
+    rgba(255, 255, 255, 0.42) 0%,
+    rgba(255, 255, 255, 0.12) 35%,
+    rgba(255, 255, 255, 0.1) 65%,
+    rgba(255, 255, 255, 0.22) 100%
   );
 }
