@@ -17,8 +17,8 @@
  * 1. 设计令牌
  * ------------------------------------------------------------------------- */
 :root {
-  --lg-blur: 30px;
-  --lg-saturate: 1.7;
+  --lg-blur: 20px;
+  --lg-saturate: 1.9;
   --lg-radius: 14px;
   --lg-radius-lg: 20px;
   --lg-radius-xl: 26px;
@@ -38,15 +38,15 @@
 :root,
 :root[data-mantine-color-scheme='light'] {
   --lg-base: #e6ebf5;
-  --lg-glow-1: rgba(84, 138, 255, 0.78);
-  --lg-glow-2: rgba(228, 118, 255, 0.66);
-  --lg-glow-3: rgba(70, 224, 205, 0.64);
-  --lg-glow-4: rgba(255, 182, 122, 0.56);
+  --lg-glow-1: rgba(84, 138, 255, 0.62);
+  --lg-glow-2: rgba(228, 118, 255, 0.52);
+  --lg-glow-3: rgba(70, 224, 205, 0.5);
+  --lg-glow-4: rgba(255, 182, 122, 0.44);
 
-  --lg-surface-1: rgba(255, 255, 255, 0.52);
-  --lg-surface-2: rgba(255, 255, 255, 0.38);
-  --lg-surface-3: rgba(255, 255, 255, 0.24);
-  --lg-surface-solid: rgba(250, 251, 255, 0.82);
+  --lg-surface-1: rgba(255, 255, 255, 0.4);
+  --lg-surface-2: rgba(255, 255, 255, 0.28);
+  --lg-surface-3: rgba(255, 255, 255, 0.18);
+  --lg-surface-solid: rgba(250, 251, 255, 0.66);
 
   --lg-sheen: linear-gradient(
     180deg,
@@ -59,7 +59,8 @@
   --lg-stroke: rgba(16, 24, 40, 0.09);
   --lg-stroke-strong: rgba(16, 24, 40, 0.16);
 
-  --lg-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9), inset 0 -1px 0 rgba(255, 255, 255, 0.28);
+  --lg-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(255, 255, 255, 0.4),
+    inset 1px 0 0 rgba(255, 255, 255, 0.55), inset -1px 0 0 rgba(255, 255, 255, 0.55);
   --lg-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05), 0 4px 14px rgba(16, 24, 40, 0.06);
   --lg-shadow-md: 0 8px 28px rgba(16, 24, 40, 0.1), 0 2px 8px rgba(16, 24, 40, 0.06);
   --lg-shadow-lg: 0 26px 64px rgba(16, 24, 40, 0.16), 0 8px 20px rgba(16, 24, 40, 0.08);
@@ -78,10 +79,10 @@ html[data-theme='dark'] {
   --lg-glow-3: rgba(20, 158, 148, 0.48);
   --lg-glow-4: rgba(214, 96, 62, 0.4);
 
-  --lg-surface-1: rgba(30, 32, 41, 0.5);
-  --lg-surface-2: rgba(42, 44, 55, 0.42);
-  --lg-surface-3: rgba(255, 255, 255, 0.06);
-  --lg-surface-solid: rgba(26, 28, 35, 0.86);
+  --lg-surface-1: rgba(30, 32, 41, 0.4);
+  --lg-surface-2: rgba(42, 44, 55, 0.32);
+  --lg-surface-3: rgba(255, 255, 255, 0.05);
+  --lg-surface-solid: rgba(26, 28, 35, 0.7);
 
   --lg-sheen: linear-gradient(
     180deg,
@@ -94,7 +95,8 @@ html[data-theme='dark'] {
   --lg-stroke: rgba(255, 255, 255, 0.09);
   --lg-stroke-strong: rgba(255, 255, 255, 0.16);
 
-  --lg-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.12), inset 0 -1px 0 rgba(0, 0, 0, 0.25);
+  --lg-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.18), inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    inset 1px 0 0 rgba(255, 255, 255, 0.07), inset -1px 0 0 rgba(255, 255, 255, 0.07);
   --lg-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.3);
   --lg-shadow-md: 0 10px 32px rgba(0, 0, 0, 0.45), 0 3px 10px rgba(0, 0, 0, 0.3);
   --lg-shadow-lg: 0 30px 72px rgba(0, 0, 0, 0.6), 0 10px 24px rgba(0, 0, 0, 0.4);
@@ -110,10 +112,10 @@ html[data-theme='dark'] {
 html:not([data-lg='off']) {
   background-color: var(--lg-base);
   background-image:
-    radial-gradient(46% 42% at 12% 6%, var(--lg-glow-1) 0%, transparent 62%),
-    radial-gradient(44% 40% at 92% 4%, var(--lg-glow-2) 0%, transparent 60%),
-    radial-gradient(52% 46% at 80% 96%, var(--lg-glow-3) 0%, transparent 62%),
-    radial-gradient(50% 46% at 6% 92%, var(--lg-glow-4) 0%, transparent 60%);
+    radial-gradient(72% 62% at 6% -4%, var(--lg-glow-1) 0%, transparent 72%),
+    radial-gradient(66% 56% at 102% -2%, var(--lg-glow-2) 0%, transparent 70%),
+    radial-gradient(78% 66% at 86% 102%, var(--lg-glow-3) 0%, transparent 72%),
+    radial-gradient(72% 62% at -2% 104%, var(--lg-glow-4) 0%, transparent 70%);
   background-attachment: fixed;
   background-repeat: no-repeat;
 }
@@ -273,8 +275,8 @@ html:not([data-lg='off']) .mantine-Drawer-content {
   border: 1px solid var(--lg-stroke) !important;
   border-radius: var(--lg-radius-xl) !important;
   box-shadow: var(--lg-highlight), var(--lg-shadow-lg) !important;
-  backdrop-filter: blur(38px) saturate(1.9);
-  -webkit-backdrop-filter: blur(38px) saturate(1.9);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
   animation: lg-pop var(--lg-dur-slow) var(--lg-ease) both;
 }
 
@@ -297,8 +299,8 @@ html:not([data-lg='off']) .mantine-Combobox-dropdown {
   border: 1px solid var(--lg-stroke) !important;
   border-radius: var(--lg-radius-lg) !important;
   box-shadow: var(--lg-highlight), var(--lg-shadow-lg) !important;
-  backdrop-filter: blur(34px) saturate(1.9);
-  -webkit-backdrop-filter: blur(34px) saturate(1.9);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
   animation: lg-pop var(--lg-dur) var(--lg-ease) both;
   overflow: hidden;
 }
@@ -321,8 +323,8 @@ html:not([data-lg='off']) .mantine-Tooltip-tooltip {
   border: 1px solid var(--lg-stroke);
   border-radius: 10px;
   box-shadow: var(--lg-highlight), var(--lg-shadow-md);
-  backdrop-filter: blur(20px) saturate(1.8);
-  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
   color: var(--chatbox-tint-primary);
   font-size: 12px;
 }
@@ -355,8 +357,8 @@ html:not([data-lg='off']) .mantine-Button-root[data-variant='light'],
 html:not([data-lg='off']) .mantine-Button-root[data-variant='default'] {
   border: 1px solid var(--lg-stroke);
   box-shadow: var(--lg-highlight), var(--lg-shadow-sm);
-  backdrop-filter: blur(18px) saturate(1.6);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
 }
 
 html:not([data-lg='off']) .mantine-Button-root[data-variant='light']:hover,
@@ -432,8 +434,8 @@ html:not([data-lg='off']) .mantine-Spotlight-content,
 html:not([data-lg='off']) .mantine-Spotlight-search {
   background-color: var(--lg-surface-solid);
   background-image: var(--lg-sheen);
-  backdrop-filter: blur(34px) saturate(1.9);
-  -webkit-backdrop-filter: blur(34px) saturate(1.9);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
 }
 
 /* ---- 通知 / 提示条 ---- */
@@ -444,8 +446,8 @@ html:not([data-lg='off']) .mantine-Alert-root {
   border: 1px solid var(--lg-stroke);
   border-radius: var(--lg-radius-lg);
   box-shadow: var(--lg-highlight), var(--lg-shadow-md);
-  backdrop-filter: blur(28px) saturate(1.8);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
 }
 
 /* ---------------------------------------------------------------------------
@@ -472,8 +474,8 @@ html:not([data-lg='off']) .MuiPopover-paper {
   border: 1px solid var(--lg-stroke) !important;
   border-radius: var(--lg-radius-xl) !important;
   box-shadow: var(--lg-highlight), var(--lg-shadow-lg) !important;
-  backdrop-filter: blur(34px) saturate(1.9);
-  -webkit-backdrop-filter: blur(34px) saturate(1.9);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
 }
 
 html:not([data-lg='off']) .MuiMenuItem-root,
@@ -488,8 +490,8 @@ html:not([data-lg='off']) .MuiSnackbarContent-root {
   border: 1px solid var(--lg-stroke);
   border-radius: var(--lg-radius-lg) !important;
   box-shadow: var(--lg-highlight), var(--lg-shadow-md) !important;
-  backdrop-filter: blur(28px) saturate(1.8);
-  -webkit-backdrop-filter: blur(28px) saturate(1.8);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
 }
 
 html:not([data-lg='off']) .MuiTooltip-tooltip {
@@ -498,8 +500,8 @@ html:not([data-lg='off']) .MuiTooltip-tooltip {
   border: 1px solid var(--lg-stroke);
   border-radius: 8px !important;
   box-shadow: var(--lg-highlight), var(--lg-shadow-sm);
-  backdrop-filter: blur(18px) saturate(1.7);
-  -webkit-backdrop-filter: blur(18px) saturate(1.7);
+  backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
+  -webkit-backdrop-filter: blur(var(--lg-blur)) saturate(var(--lg-saturate));
 }
 
 html:not([data-lg='off']) .MuiBackdrop-root {
@@ -565,4 +567,69 @@ html:not([data-lg='off']) .mantine-Divider-root {
 /* KaTeX 滚动条配色跟随玻璃 */
 html:not([data-lg='off']) .katex-display::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--chatbox-tint-tertiary) 40%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+ * 10. 玻璃边缘亮边（specular edge）—— 液态玻璃最醒目的特征
+ * ------------------------------------------------------------------------- */
+html:not([data-lg='off']) .lg-main-panel,
+html:not([data-lg='off']) .lg-sidebar,
+html:not([data-lg='off']) .mantine-Modal-content,
+html:not([data-lg='off']) .mantine-Drawer-content,
+html:not([data-lg='off']) .mantine-Menu-dropdown,
+html:not([data-lg='off']) .mantine-Popover-dropdown,
+html:not([data-lg='off']) .mantine-Combobox-dropdown,
+html:not([data-lg='off']) .MuiDialog-paper,
+html:not([data-lg='off']) .MuiMenu-paper,
+html:not([data-lg='off']) .MuiPopover-paper {
+  position: relative;
+}
+
+html:not([data-lg='off']) .lg-main-panel::after,
+html:not([data-lg='off']) .lg-sidebar::after,
+html:not([data-lg='off']) .mantine-Modal-content::after,
+html:not([data-lg='off']) .mantine-Drawer-content::after,
+html:not([data-lg='off']) .mantine-Menu-dropdown::after,
+html:not([data-lg='off']) .mantine-Popover-dropdown::after,
+html:not([data-lg='off']) .mantine-Combobox-dropdown::after,
+html:not([data-lg='off']) .MuiDialog-paper::after,
+html:not([data-lg='off']) .MuiMenu-paper::after,
+html:not([data-lg='off']) .MuiPopover-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.92) 0%,
+    rgba(255, 255, 255, 0.22) 30%,
+    rgba(255, 255, 255, 0) 55%,
+    rgba(255, 255, 255, 0.4) 100%
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 2;
+}
+
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .lg-main-panel::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .lg-sidebar::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .mantine-Modal-content::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .mantine-Drawer-content::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .mantine-Menu-dropdown::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .mantine-Popover-dropdown::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .mantine-Combobox-dropdown::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .MuiDialog-paper::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .MuiMenu-paper::after,
+html[data-mantine-color-scheme='dark']:not([data-lg='off']) .MuiPopover-paper::after {
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.38) 0%,
+    rgba(255, 255, 255, 0.07) 32%,
+    rgba(255, 255, 255, 0) 60%,
+    rgba(255, 255, 255, 0.14) 100%
+  );
 }

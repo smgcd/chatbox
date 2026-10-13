@@ -17,6 +17,7 @@ import './static/globals.css'
 import './static/index.css'
 // cd 定制：Liquid Glass 外观层（放在最后，优先级最高，可整体覆盖前面的样式）
 import './static/liquid-glass.css'
+import { initLiquidGlass } from './static/liquid-glass'
 import { initLogAtom, migrationProcessAtom } from './stores/atoms/utilAtoms'
 import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
 
@@ -35,6 +36,9 @@ import './setup/protect'
 
 // Token estimation system initialization (runs in all environments)
 void import('./setup/token_estimation_init')
+
+// Liquid Glass 边缘折射：给玻璃容器叠 SVG feDisplacementMap 折射
+initLiquidGlass()
 
 // 引入移动端安全区域代码，主要为了解决异形屏幕的问题
 if (CHATBOX_BUILD_TARGET === 'mobile_app' && CHATBOX_BUILD_PLATFORM === 'ios') {
