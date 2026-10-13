@@ -7,6 +7,11 @@ import { getLogger } from './util'
 
 const log = getLogger('app-updater')
 
+// [smgcd personal build] 关闭自动更新：这是自编译的个人版，
+// 绝不能在退出时被官方版静默覆盖（autoInstallOnAppQuit）。
+// 想恢复自动更新：改成 true 并重新打包。
+const ENABLE_AUTO_UPDATE = false
+
 function sendToRenderer(win: BrowserWindow | null, channel: string, data?: unknown) {
   if (win && !win.isDestroyed()) {
     win.webContents.send(channel, data)
@@ -82,7 +87,7 @@ export class AppUpdater {
     })
 
     const settings = getSettings()
-    if (settings.autoUpdate) {
+    if (ENABLE_AUTO_UPDATE && settings.autoUpdate) {
       setTimeout(() => this.tryUpdate().catch((e) => log.error('auto_updater: startup check failed', e)), 5_000)
       setInterval(
         () => this.tryUpdate().catch((e) => log.error('auto_updater: scheduled check failed', e)),
@@ -93,6 +98,10 @@ export class AppUpdater {
   }
 
   async tryUpdate() {
+    if (!ENABLE_AUTO_UPDATE) {
+      log.info('auto_updater: disabled in this build')
+      return null
+    }
     if (this.isChecking) {
       log.info('auto_updater: check already in progress, skipping')
       return null

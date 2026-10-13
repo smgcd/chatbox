@@ -51,10 +51,8 @@ win:
         - arm64
   verifyUpdateCodeSignature: false
   artifactName: ${productName}-${version}-Setup.${ext}
-  signtoolOptions:
-    sign: ./custom_win_sign.js
-    signingHashAlgorithms:
-      - sha256
+  # [smgcd] 去掉 windows 签名：仓库里根本没有 custom_win_sign.js（本地也无证书），
+  # 保留会导致 `pnpm run package` 直接报错。未签名产物首次运行会有 SmartScreen 提示。
 
 nsis:
   oneClick: false
@@ -78,6 +76,10 @@ directories:
   app: release/app
   buildResources: assets
   output: release/build
+
+# [smgcd] 用本地已装的 electron（node_modules/electron/dist），
+# 避开从 GitHub / 镜像下载 electron 二进制失败的问题
+electronDist: node_modules/electron/dist
 
 extraResources:
   - ./assets/**
