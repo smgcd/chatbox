@@ -43,10 +43,11 @@
   --lg-glow-3: rgba(70, 224, 205, 0.58);
   --lg-glow-4: rgba(255, 182, 122, 0.52);
 
-  --lg-surface-1: rgba(255, 255, 255, 0.02);
-  --lg-surface-2: rgba(255, 255, 255, 0.015);
-  --lg-surface-3: rgba(255, 255, 255, 0.03);
-  --lg-surface-solid: rgba(250, 251, 255, 0.14);
+  --lg-surface-1: rgba(255, 255, 255, 0.1);
+  --lg-surface-2: rgba(255, 255, 255, 0.08);
+  --lg-surface-3: rgba(255, 255, 255, 0.05);
+  --lg-surface-card: rgba(255, 255, 255, 0.45);
+  --lg-surface-solid: rgba(252, 253, 255, 0.64);
 
   --lg-sheen: linear-gradient(
     180deg,
@@ -79,10 +80,11 @@ html[data-theme='dark'] {
   --lg-glow-3: rgba(20, 158, 148, 0.48);
   --lg-glow-4: rgba(214, 96, 62, 0.4);
 
-  --lg-surface-1: rgba(18, 20, 27, 0.08);
-  --lg-surface-2: rgba(22, 25, 33, 0.06);
-  --lg-surface-3: rgba(255, 255, 255, 0.03);
-  --lg-surface-solid: rgba(20, 22, 29, 0.2);
+  --lg-surface-1: rgba(18, 20, 27, 0.14);
+  --lg-surface-2: rgba(22, 25, 33, 0.11);
+  --lg-surface-3: rgba(255, 255, 255, 0.04);
+  --lg-surface-card: rgba(28, 31, 40, 0.52);
+  --lg-surface-solid: rgba(26, 28, 36, 0.72);
 
   --lg-sheen: linear-gradient(
     180deg,
@@ -259,7 +261,7 @@ html:not([data-lg='off']) .App:has(.lg-bg-image) .lg-sidebar {
 /* ---- 通用容器：Paper / Card ---- */
 html:not([data-lg='off']) .mantine-Paper-root,
 html:not([data-lg='off']) .mantine-Card-root {
-  background-color: var(--lg-surface-1);
+  background-color: var(--lg-surface-card);
   background-image: var(--lg-sheen);
   border: 1px solid var(--lg-stroke);
   box-shadow: var(--lg-highlight), var(--lg-shadow-sm);
@@ -513,13 +515,13 @@ html:not([data-lg='off']) .MuiBackdrop-root {
  * 8. 动效："交互优雅"
  * ------------------------------------------------------------------------- */
 @keyframes lg-pop {
+  /* ⚠️ 只能改 opacity：Mantine 用内联 transform 给浮层定位，
+     任何 transform 动画都会盖掉它，导致下拉/菜单跑到页面外 */
   from {
     opacity: 0;
-    transform: scale(0.965) translateY(8px);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
   }
 }
 
@@ -572,16 +574,10 @@ html:not([data-lg='off']) .katex-display::-webkit-scrollbar-thumb {
 /* ---------------------------------------------------------------------------
  * 10. 玻璃边缘亮边（specular edge）—— 液态玻璃最醒目的特征
  * ------------------------------------------------------------------------- */
+/* 只给布局元素补定位：浮层（Modal/Menu/Popover…）本身已由 Mantine 定位，
+   给它们加 position/transform 会直接破坏弹出位置 */
 html:not([data-lg='off']) .lg-main-panel,
-html:not([data-lg='off']) .lg-sidebar,
-html:not([data-lg='off']) .mantine-Modal-content,
-html:not([data-lg='off']) .mantine-Drawer-content,
-html:not([data-lg='off']) .mantine-Menu-dropdown,
-html:not([data-lg='off']) .mantine-Popover-dropdown,
-html:not([data-lg='off']) .mantine-Combobox-dropdown,
-html:not([data-lg='off']) .MuiDialog-paper,
-html:not([data-lg='off']) .MuiMenu-paper,
-html:not([data-lg='off']) .MuiPopover-paper {
+html:not([data-lg='off']) .lg-sidebar {
   position: relative;
 }
 

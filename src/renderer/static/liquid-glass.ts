@@ -247,6 +247,9 @@ function refresh(el: HTMLElement) {
 function unmount(el: HTMLElement, inst: Instance) {
   inst.ro.disconnect()
   inst.filter.remove()
+  // 清掉内联样式，避免元素复用时残留（也让 data-lg="off" 能真正回退）
+  el.style.removeProperty('backdrop-filter')
+  el.style.removeProperty('-webkit-backdrop-filter')
   active.delete(el)
 }
 
