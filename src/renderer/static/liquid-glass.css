@@ -38,20 +38,20 @@
 :root,
 :root[data-mantine-color-scheme='light'] {
   --lg-base: #e6ebf5;
-  --lg-glow-1: rgba(84, 138, 255, 0.62);
-  --lg-glow-2: rgba(228, 118, 255, 0.52);
-  --lg-glow-3: rgba(70, 224, 205, 0.5);
-  --lg-glow-4: rgba(255, 182, 122, 0.44);
+  --lg-glow-1: rgba(84, 138, 255, 0.72);
+  --lg-glow-2: rgba(228, 118, 255, 0.6);
+  --lg-glow-3: rgba(70, 224, 205, 0.58);
+  --lg-glow-4: rgba(255, 182, 122, 0.52);
 
-  --lg-surface-1: rgba(255, 255, 255, 0.08);
-  --lg-surface-2: rgba(255, 255, 255, 0.05);
-  --lg-surface-3: rgba(255, 255, 255, 0.04);
-  --lg-surface-solid: rgba(250, 251, 255, 0.3);
+  --lg-surface-1: rgba(255, 255, 255, 0.02);
+  --lg-surface-2: rgba(255, 255, 255, 0.015);
+  --lg-surface-3: rgba(255, 255, 255, 0.03);
+  --lg-surface-solid: rgba(250, 251, 255, 0.14);
 
   --lg-sheen: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.2) 0%,
-    rgba(255, 255, 255, 0.04) 40%,
+    rgba(255, 255, 255, 0.1) 0%,
+    rgba(255, 255, 255, 0.02) 40%,
     rgba(255, 255, 255, 0) 100%
   );
 
@@ -79,15 +79,15 @@ html[data-theme='dark'] {
   --lg-glow-3: rgba(20, 158, 148, 0.48);
   --lg-glow-4: rgba(214, 96, 62, 0.4);
 
-  --lg-surface-1: rgba(18, 20, 27, 0.22);
-  --lg-surface-2: rgba(22, 25, 33, 0.16);
-  --lg-surface-3: rgba(255, 255, 255, 0.035);
-  --lg-surface-solid: rgba(20, 22, 29, 0.42);
+  --lg-surface-1: rgba(18, 20, 27, 0.08);
+  --lg-surface-2: rgba(22, 25, 33, 0.06);
+  --lg-surface-3: rgba(255, 255, 255, 0.03);
+  --lg-surface-solid: rgba(20, 22, 29, 0.2);
 
   --lg-sheen: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.07) 0%,
-    rgba(255, 255, 255, 0.015) 40%,
+    rgba(255, 255, 255, 0.045) 0%,
+    rgba(255, 255, 255, 0.01) 40%,
     rgba(255, 255, 255, 0) 100%
   );
 
@@ -632,4 +632,41 @@ html[data-mantine-color-scheme='dark']:not([data-lg='off']) .MuiPopover-paper::a
     rgba(255, 255, 255, 0.1) 65%,
     rgba(255, 255, 255, 0.22) 100%
   );
+}
+
+/* ---------------------------------------------------------------------------
+ * 11. 输入框发送按钮（Mantine ActionIcon）—— 玻璃圆钮
+ * ------------------------------------------------------------------------- */
+html:not([data-lg='off']) .lg-send-btn {
+  --ai-radius: 999px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  background: color-mix(in srgb, var(--chatbox-tint-brand) 84%, transparent) !important;
+  color: #fff;
+  backdrop-filter: blur(14px) saturate(1.7);
+  -webkit-backdrop-filter: blur(14px) saturate(1.7);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 4px 14px color-mix(in srgb, var(--chatbox-tint-brand) 42%, transparent);
+  transition: transform 160ms var(--lg-ease), box-shadow var(--lg-dur) var(--lg-ease-soft),
+    background-color var(--lg-dur) var(--lg-ease-soft);
+}
+
+html:not([data-lg='off']) .lg-send-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62), inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 8px 22px color-mix(in srgb, var(--chatbox-tint-brand) 52%, transparent);
+}
+
+html:not([data-lg='off']) .lg-send-btn:active {
+  transform: scale(0.93);
+}
+
+html:not([data-lg='off']) .lg-send-btn:disabled,
+html:not([data-lg='off']) .lg-send-btn[data-disabled] {
+  background: color-mix(in srgb, var(--chatbox-tint-tertiary) 24%, transparent) !important;
+  color: color-mix(in srgb, var(--chatbox-tint-primary) 42%, transparent);
+  border-color: rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(10px) saturate(1.4);
+  -webkit-backdrop-filter: blur(10px) saturate(1.4);
 }

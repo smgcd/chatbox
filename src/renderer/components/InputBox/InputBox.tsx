@@ -1649,7 +1649,7 @@ const InputBox = forwardRef<InputBoxRef, InputBoxProps>(
                   radius="lg"
                   onClick={showingStopControl ? onStopGenerating : () => handleSubmit()}
                   className={cn(
-                    'shrink-0 mb-1',
+                    'lg-send-btn shrink-0 mb-1',
                     !showingStopControl && submitBlocked && 'disabled:!opacity-100 !text-white'
                   )}
                   style={

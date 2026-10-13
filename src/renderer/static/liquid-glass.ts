@@ -154,8 +154,8 @@ function applyBackdropFilter(el: HTMLElement, id: string) {
   const cs = getComputedStyle(el)
   const blur = (cs.getPropertyValue('--lg-blur') || '9px').trim() || '9px'
   const saturate = (cs.getPropertyValue('--lg-saturate') || '1.55').trim() || '1.55'
-  // 真实液态玻璃：模糊很轻 + 亮度/饱和微调，背景清晰透出，只靠折射与边缘高光立形
-  const value = `url(#${id}) blur(${blur}) saturate(${saturate}) brightness(1.06)`
+  // 真实液态玻璃：模糊很轻，背景几乎原样透出，只靠折射与边缘高光立形
+  const value = `url(#${id}) blur(${blur}) saturate(${saturate})`
   el.style.setProperty('backdrop-filter', value)
   el.style.setProperty('-webkit-backdrop-filter', value)
 }
