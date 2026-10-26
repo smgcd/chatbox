@@ -5,6 +5,10 @@
  * pipeline (no `?raw` import, no electron-vite config change). The client only
  * speaks the closed command enum from shared/remote-host.ts.
  *
+ * Live updates arrive over Server-Sent Events (/api/events): the renderer
+ * pushes ~150ms frames with the streaming text + reasoning. The 3s poll is only
+ * for structure (new sessions, final text, tool list).
+ *
  * Note: this string is written without backticks or "${" so it can live inside
  * a template literal safely.
  */
@@ -39,7 +43,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   .bubble { max-width:86%; border-radius:16px; padding:10px 13px; white-space:pre-wrap; word-break:break-word; }
   .msg.user .bubble { background:#243055; border:1px solid #2f3f6b; }
   .msg.assistant .bubble { background:var(--panel); border:1px solid var(--line); }
-  .msg.system .bubble { background:#1a1c22; color:var(--dim); font-size:13px; }
+  .bubble > div:empty, .bubble > span:empty { display:none; }
   .tools { margin-top:8px; display:flex; flex-direction:column; gap:5px; }
   .tool { font-size:12px; padding:5px 8px; border-radius:8px; background:#12141a; border:1px solid var(--line); color:var(--dim); }
   .tool.call { border-color:#4a3c12; color:var(--warn); }
@@ -51,7 +55,10 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   .approve .yes { background:#1d3a2a; border-color:#2f5a41; color:#7ee2b0; }
   .approve .no { background:#3a1d22; border-color:#5c2a32; color:#ff9a9a; }
   .err { margin-top:6px; font-size:12px; color:var(--err); }
-  .reason { margin-top:6px; font-size:12px; line-height:1.5; color:#7d8398; white-space:pre-wrap; border-left:2px solid #2a2e3a; padding-left:8px; }
+  .reason { margin:0 0 8px; padding-left:8px; font-size:12px; line-height:1.5; color:#7d8398; white-space:pre-wrap; border-left:2px solid #2a2e3a; }
+  .bubble code { background:#0b0c10; padding:1px 4px; border-radius:4px; font-size:13px; }
+  .bubble pre.code { background:#0b0c10; padding:9px 10px; border-radius:8px; overflow-x:auto; font-size:13px; margin:6px 0; }
+  .bubble strong.h { display:block; margin:6px 0 3px; font-size:15px; }
   .empty { color:var(--dim); text-align:center; margin-top:40px; font-size:14px; line-height:1.8; }
   footer { padding:8px 12px calc(env(safe-area-inset-bottom) + 10px); background:var(--panel); border-top:1px solid var(--line); display:flex; gap:8px; align-items:flex-end; }
   textarea { flex:1 1 auto; resize:none; min-height:44px; max-height:38vh; background:#12141a; color:var(--fg); border:1px solid var(--line); border-radius:12px; padding:11px 12px; font:16px/1.4 inherit; }
@@ -65,7 +72,6 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   <span id="dot" class="dot"></span>
   <select id="sessions"></select>
   <button id="newBtn" aria-label="新建会话">＋</button>
-  <button id="modeBtn">普通</button>
   <button id="stopBtn" class="danger" disabled>停止</button>
 </header>
 <main id="log"><div class="empty">正在连接…</div></main>
@@ -84,8 +90,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   var newEl = document.getElementById('newBtn');
   var dotEl = document.getElementById('dot');
   var hintEl = document.getElementById('hint');
-  var modeBtn = document.getElementById('modeBtn');
-  var state = { sessionId: null, sessions: [], busy: false, timer: null, inflight: false, agentMode: 'off', locked: false };
+  var state = { sessionId: null, sessions: [], busy: false, timer: null, inflight: false, source: null };
 
   function esc(value) {
     return String(value == null ? '' : value)
@@ -118,9 +123,9 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     return logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 120;
   }
 
-  function renderTools(tools, messageId) {
+  function toolsHtml(tools, messageId) {
     if (!tools || !tools.length) return '';
-    var html = '<div class="tools">';
+    var html = '';
     for (var i = 0; i < tools.length; i++) {
       var tool = tools[i];
       var suffix = tool.duration ? ' · ' + Math.round(tool.duration / 100) / 10 + 's' : '';
@@ -133,7 +138,34 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
           + '</div>';
       }
     }
-    return html + '</div>';
+    return html;
+  }
+
+  // Tiny markdown subset: fenced code, inline code, bold, headings. Applied
+  // only once a message stops streaming, so live updates stay cheap.
+  function md(src) {
+    var out = esc(src || '');
+    out = out.replace(/\\u0060\\u0060\\u0060([a-zA-Z0-9_-]*)\\n([\\s\\S]*?)\\u0060\\u0060\\u0060/g, function (m, lang, code) {
+      return '<pre class="code">' + code.replace(/\\n$/, '') + '</pre>';
+    });
+    out = out.replace(/\\u0060([^\\u0060\\n]+)\\u0060/g, '<code>$1</code>');
+    out = out.replace(/\\*\\*([^*\\n]+)\\*\\*/g, '<strong>$1</strong>');
+    out = out.replace(/^#{1,6}\\s+(.+)$/gm, '<strong class="h">$1</strong>');
+    return out;
+  }
+
+  function reasonTail(reasoning) {
+    if (!reasoning) return '';
+    return reasoning.length > 600 ? '…' + reasoning.slice(-600) : reasoning;
+  }
+
+  function bubbleHtml(message) {
+    var text = message.text || (message.generating ? '…' : '');
+    var txt = message.generating ? esc(text) : md(text);
+    return '<div class="reason">' + esc(reasonTail(message.reasoning)) + '</div>'
+      + '<span class="txt">' + txt + '</span>'
+      + '<div class="tools">' + toolsHtml(message.tools, message.id) + '</div>'
+      + '<div class="err">' + esc(message.error || '') + '</div>';
   }
 
   function render(session) {
@@ -142,42 +174,74 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       logEl.innerHTML = '<div class="empty">这个会话还没有消息。<br>在下面输入，就是直接对它说话。</div>';
       return;
     }
-    if (!session.messages.length) {
-      logEl.innerHTML = '<div class="empty">空会话，直接输入即可。</div>';
-      return;
-    }
     var html = '';
+    var count = 0;
     for (var i = 0; i < session.messages.length; i++) {
       var message = session.messages[i];
       if (message.role !== 'user' && message.role !== 'assistant') continue;
+      count += 1;
       var role = message.role === 'user' ? 'user' : 'assistant';
-      var text = message.text || (message.generating ? '…' : '');
-      var reason = '';
-      if (message.reasoning && (message.generating || !message.text)) {
-        var tail = message.reasoning.length > 240 ? '…' + message.reasoning.slice(-240) : message.reasoning;
-        reason = '<div class="reason">' + esc(tail) + '</div>';
-      }
-      html += '<div class="msg ' + role + '"><div class="bubble">'
-        + esc(text)
-        + reason
-        + renderTools(message.tools, message.id)
-        + (message.error ? '<div class="err">' + esc(message.error) + '</div>' : '')
-        + '</div></div>';
+      html += '<div class="msg ' + role + '" data-mid="' + esc(message.id) + '"><div class="bubble">'
+        + bubbleHtml(message) + '</div></div>';
     }
-    logEl.innerHTML = html;
+    if (!count) {
+      logEl.innerHTML = '<div class="empty">空会话，直接输入即可。</div>';
+    } else {
+      logEl.innerHTML = html;
+    }
     if (stick) logEl.scrollTop = logEl.scrollHeight;
     state.busy = Boolean(session.busy || session.generating);
-    state.agentMode = session.agentMode || 'off';
-    state.locked = Boolean(session.agentModeLocked);
     dotEl.className = 'dot' + (state.busy ? ' busy' : '');
     stopEl.disabled = !state.busy;
-    modeBtn.textContent = state.agentMode === 'on' ? '智能体 开' : (state.agentMode === 'auto' ? '自动' : '普通');
-    modeBtn.disabled = state.locked;
+  }
+
+  // Patch a single bubble in place: full re-render at 6fps would burn the iPad
+  // and fight with scrolling.
+  function applyProgress(event) {
+    if (event.sessionId !== state.sessionId) return;
+    var node = logEl.querySelector('[data-mid="' + event.messageId + '"]');
+    if (!node) { tick(); return; }
+    var stick = nearBottom();
+    var bubble = node.querySelector('.bubble');
+    if (!bubble) { tick(); return; }
+    var txt = bubble.querySelector('.txt');
+    var reason = bubble.querySelector('.reason');
+    var tools = bubble.querySelector('.tools');
+    if (txt) {
+      if (event.generating) {
+        txt.textContent = event.text || '…';
+      } else {
+        txt.innerHTML = md(event.text);
+      }
+    }
+    if (reason) reason.textContent = reasonTail(event.reasoning);
+    if (tools) tools.innerHTML = toolsHtml(event.tools, event.messageId);
+    if (stick) logEl.scrollTop = logEl.scrollHeight;
+    state.busy = Boolean(event.generating);
+    dotEl.className = 'dot' + (state.busy ? ' busy' : '');
+    stopEl.disabled = !state.busy;
+  }
+
+  function connectEvents() {
+    if (state.source) state.source.close();
+    var source = new EventSource('/api/events');
+    state.source = source;
+    source.onmessage = function (event) {
+      try {
+        var payload = JSON.parse(event.data);
+        if (payload && payload.type === 'progress') applyProgress(payload);
+      } catch (error) { /* ignore malformed frame */ }
+    };
+    source.onerror = function () {
+      // EventSource retries on its own; surface it once so the user knows why
+      // nothing is moving.
+      hint('实时连接断开，正在重连…');
+    };
   }
 
   function scheduleNext() {
     if (state.timer) clearTimeout(state.timer);
-    state.timer = setTimeout(tick, state.busy ? 1200 : 3000);
+    state.timer = setTimeout(tick, 3000);
   }
 
   function tick() {
@@ -213,6 +277,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
         inputEl.value = '';
         inputEl.style.height = 'auto';
         state.busy = true;
+        dotEl.className = 'dot busy';
         scheduleNext();
       })
       .catch(function (error) { hint(error.message); })
@@ -244,19 +309,6 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       .catch(function (error) { hint(error.message); stopEl.disabled = false; });
   });
 
-  modeBtn.addEventListener('click', function () {
-    if (!state.sessionId || state.locked) return;
-    var next = state.agentMode === 'on' ? 'off' : 'on';
-    api('set-agent-mode', { sessionId: state.sessionId, value: next })
-      .then(function (result) {
-        state.agentMode = result.agentMode;
-        state.locked = Boolean(result.locked);
-        modeBtn.textContent = state.agentMode === 'on' ? '智能体 开' : '普通';
-        hint(state.locked ? '会话已开始，模式已锁定' : '已切换');
-      })
-      .catch(function (error) { hint(error.message); });
-  });
-
   logEl.addEventListener('click', function (event) {
     var target = event.target;
     if (!target || !target.getAttribute || target.getAttribute('data-approve') === null) return;
@@ -279,6 +331,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       .catch(function (error) { hint(error.message); });
   });
 
+  connectEvents();
   loadSessions().catch(function (error) {
     logEl.innerHTML = '<div class="empty">连接失败：' + esc(error.message) + '<br>请确认与电脑在同一 WiFi，并用带 token 的链接打开。</div>';
   });

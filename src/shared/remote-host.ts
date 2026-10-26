@@ -83,6 +83,48 @@ export interface RemoteSessionSummary {
   createdAt?: number
 }
 
+/** Real-time streaming frame pushed from the renderer, relayed over SSE. */
+export interface RemoteProgressEvent {
+  type: 'progress'
+  sessionId: string
+  messageId: string
+  text: string
+  reasoning?: string
+  generating: boolean
+  tools: RemoteToolCallDigest[]
+}
+
+const PROGRESS_TAIL_LIMIT = 4000
+
+function tail(value: string, limit: number): string {
+  return value.length > limit ? value.slice(-limit) : value
+}
+
+/**
+ * Builds the live frame for the message currently being generated. Called on a
+ * short interval by the renderer bridge; `updateStreamingCache` refreshes the
+ * in-memory session on every stream chunk, so this is as fresh as the UI is.
+ */
+export function buildProgressEvent(
+  sessionId: string,
+  message: {
+    id: string
+    generating?: boolean
+    contentParts?: Message['contentParts']
+  }
+): RemoteProgressEvent {
+  const digest = digestMessage(message as Message)
+  return {
+    type: 'progress',
+    sessionId,
+    messageId: digest.id,
+    text: tail(digest.text, PROGRESS_TAIL_LIMIT),
+    reasoning: digest.reasoning ? tail(digest.reasoning, PROGRESS_TAIL_LIMIT) : undefined,
+    generating: digest.generating,
+    tools: digest.tools,
+  }
+}
+
 function briefArgs(args: unknown): string | undefined {
   if (args === undefined || args === null) return undefined
   let text: string

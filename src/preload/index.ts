@@ -80,6 +80,7 @@ const electronHandler: ElectronIPC = {
   onBuiltInBrowserTabs: createListener('built-in-browser:tabs'),
   onRemoteHostCommand: createListener('remote-host:command'),
   replyRemoteHostCommand: (reply) => ipcRenderer.send('remote-host:reply', reply),
+  pushRemoteHostProgress: (event) => ipcRenderer.send('remote-host:progress', event),
 
   // Auto-updater events
   onUpdaterChecking: createListener('updater:checking'),

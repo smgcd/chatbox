@@ -18,7 +18,7 @@ import http from 'node:http'
 import os from 'node:os'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
-import type { RemoteHostCommand, RemoteHostEnvelope, RemoteHostReply } from '@shared/remote-host'
+import type { RemoteHostCommand, RemoteHostEnvelope, RemoteHostReply, RemoteProgressEvent } from '@shared/remote-host'
 import { REMOTE_CLIENT_HTML } from './remote-client-html'
 
 const REPLY_TIMEOUT_MS = 90_000
@@ -38,11 +38,27 @@ type Pending = {
 }
 
 const pending = new Map<string, Pending>()
+const sseClients = new Set<http.ServerResponse>()
 let ipcInstalled = false
+
+function broadcastProgress(event: RemoteProgressEvent): void {
+  if (sseClients.size === 0) return
+  const payload = `data: ${JSON.stringify(event)}\n\n`
+  for (const client of sseClients) {
+    try {
+      client.write(payload)
+    } catch {
+      sseClients.delete(client)
+    }
+  }
+}
 
 function installIpc(): void {
   if (ipcInstalled) return
   ipcInstalled = true
+  ipcMain.on('remote-host:progress', (_event, progress: RemoteProgressEvent) => {
+    broadcastProgress(progress)
+  })
   ipcMain.on('remote-host:reply', (_event, reply: RemoteHostReply) => {
     const entry = reply && pending.get(reply.id)
     if (!entry) return
@@ -198,6 +214,37 @@ export function startRemoteHostServer(options: {
       return
     }
 
+    // Live streaming frames (Server-Sent Events). One persistent connection per
+    // phone; the renderer pushes ~150ms frames, we just relay them.
+    if (url.pathname === '/api/events') {
+      const headerToken = request.headers['x-cbx-token']
+      const supplied = typeof headerToken === 'string' ? headerToken : cookies.cbx
+      if (supplied !== token) {
+        sendJson(response, 401, { error: 'invalid token' })
+        return
+      }
+      response.writeHead(200, {
+        'content-type': 'text/event-stream; charset=utf-8',
+        'cache-control': 'no-store, no-transform',
+        connection: 'keep-alive',
+        'x-accel-buffering': 'no',
+      })
+      response.write(': connected\n\n')
+      sseClients.add(response)
+      const heartbeat = setInterval(() => {
+        try {
+          response.write(': ping\n\n')
+        } catch {
+          sseClients.delete(response)
+        }
+      }, 15_000)
+      request.on('close', () => {
+        clearInterval(heartbeat)
+        sseClients.delete(response)
+      })
+      return
+    }
+
     if (url.pathname === '/api/exec') {
       const headerToken = request.headers['x-cbx-token']
       const supplied = typeof headerToken === 'string' ? headerToken : cookies.cbx
@@ -239,7 +286,17 @@ export function startRemoteHostServer(options: {
         port,
         token,
         url,
-        close: () => server.close(),
+        close: () => {
+          for (const client of sseClients) {
+            try {
+              client.end()
+            } catch {
+              // ignore
+            }
+          }
+          sseClients.clear()
+          server.close()
+        },
       })
     })
   })

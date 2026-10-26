@@ -23,6 +23,8 @@ export interface ElectronIPC {
   // renderer, the renderer answers with its own business logic.
   onRemoteHostCommand: (callback: (envelope: import('./remote-host').RemoteHostEnvelope) => void) => () => void
   replyRemoteHostCommand: (reply: import('./remote-host').RemoteHostReply) => void
+  /** Streaming progress pushed to the LAN client over SSE. */
+  pushRemoteHostProgress: (event: import('./remote-host').RemoteProgressEvent) => void
 
   // Auto-updater events
   onUpdaterChecking: (callback: () => void) => () => void
