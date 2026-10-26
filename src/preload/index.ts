@@ -78,6 +78,8 @@ const electronHandler: ElectronIPC = {
   },
   onSkillsBuiltinUpdated: createListener('skills:builtin-updated'),
   onBuiltInBrowserTabs: createListener('built-in-browser:tabs'),
+  onRemoteHostCommand: createListener('remote-host:command'),
+  replyRemoteHostCommand: (reply) => ipcRenderer.send('remote-host:reply', reply),
 
   // Auto-updater events
   onUpdaterChecking: createListener('updater:checking'),

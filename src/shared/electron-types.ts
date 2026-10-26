@@ -19,6 +19,11 @@ export interface ElectronIPC {
   onSkillsBuiltinUpdated: (callback: () => void) => () => void
   onBuiltInBrowserTabs: (callback: (tabs: BuiltInBrowserTabs) => void) => () => void
 
+  // LAN remote host (local-only feature): main forwards HTTP commands to the
+  // renderer, the renderer answers with its own business logic.
+  onRemoteHostCommand: (callback: (envelope: import('./remote-host').RemoteHostEnvelope) => void) => () => void
+  replyRemoteHostCommand: (reply: import('./remote-host').RemoteHostReply) => void
+
   // Auto-updater events
   onUpdaterChecking: (callback: () => void) => () => void
   onUpdaterAvailable: (callback: (data: { version: string }) => void) => () => void

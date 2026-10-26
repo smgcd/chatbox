@@ -81,12 +81,17 @@ import {
 } from './store-node'
 import * as windowState from './window_state'
 import { loadWorkspaceInstructions } from './workspace-instructions'
+import { describeRemoteUrl, startRemoteHostServer } from './remote-server'
 
 const IS_HARMONY_BUILD = process.env.CHATBOX_BUILD_TARGET === 'harmony_app'
 const IS_HARMONY_KB_ENABLED = process.env.CHATBOX_HARMONY_KB_ENABLED === 'true'
+// LAN remote-host mode (local-only feature): the window stays hidden and a phone
+// on the same WiFi drives this instance over HTTP.
+const SERVE_MODE = process.argv.includes('--serve')
 const MAIN_RUNTIME_POLICY = getMainRuntimePolicy(process.env, {
   isHarmonyBuild: IS_HARMONY_BUILD,
   isPackaged: app.isPackaged,
+  serveMode: SERVE_MODE,
 })
 if (process.platform === 'darwin' && MAIN_RUNTIME_POLICY.isQa) {
   // Must run before ready. Accessory keeps a new Electron process from
@@ -491,6 +496,7 @@ async function createWindow() {
 
   mainWindow = new BrowserWindow({
     show: false,
+    skipTaskbar: MAIN_RUNTIME_POLICY.skipTaskbar,
     ...(qaWindowTitle ? { title: qaWindowTitle } : {}),
     // remove the default titlebar
     titleBarStyle: 'hidden',
@@ -508,6 +514,9 @@ async function createWindow() {
       spellcheck: true,
       webSecurity: false, // 其中一个作用是解决跨域问题
       allowRunningInsecureContent: false,
+      // Serve mode keeps the window hidden for hours; Chromium would otherwise
+      // throttle timers to ~1/min and break streaming persistence / stop watchdogs.
+      backgroundThrottling: !MAIN_RUNTIME_POLICY.isServe,
       preload:
         app.isPackaged || IS_HARMONY_BUILD
           ? path.join(__dirname, '../preload/index.js')
@@ -565,6 +574,12 @@ async function createWindow() {
   let hasShownMainWindow = false
   const showMainWindow = () => {
     if (hasShownMainWindow) {
+      return
+    }
+    if (MAIN_RUNTIME_POLICY.isServe) {
+      // Stay invisible: no taskbar entry, no focus steal, nothing for the person
+      // on the desktop to notice.
+      hasShownMainWindow = true
       return
     }
     if (!mainWindow) {
@@ -695,6 +710,24 @@ async function showOrHideWindow() {
 
 // --------- 应用管理 ---------
 
+async function startRemoteServeMode(getWindow: () => BrowserWindow | null) {
+  const portArg = process.argv.find((arg) => arg.startsWith('--port='))
+  const parsedPort = portArg ? Number(portArg.slice('--port='.length)) : 8787
+  const port = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536 ? parsedPort : 8787
+  try {
+    const handle = await startRemoteHostServer({ getWindow, port })
+    const urlFile = path.join(app.getPath('userData'), 'remote-host-url.txt')
+    try {
+      fs.writeFileSync(urlFile, describeRemoteUrl(handle), 'utf8')
+      log.info(`[remote-host] url written to ${urlFile}`)
+    } catch (error) {
+      log.error('[remote-host] failed to write url file', error)
+    }
+  } catch (error) {
+    log.error('[remote-host] failed to start server', error)
+  }
+}
+
 const quitForInstallRequested = process.platform === 'win32' && isQuitForInstallRequested(process.argv)
 const gotTheLock = MAIN_RUNTIME_POLICY.requestSingleInstanceLock ? app.requestSingleInstanceLock() : true
 
@@ -759,6 +792,9 @@ if (quitForInstallRequested) {
       startupWindowCreated = true
       await initializeSessionAttachmentRagAfterAppReady()
       ensureTray()
+      if (MAIN_RUNTIME_POLICY.isServe) {
+        await startRemoteServeMode(() => mainWindow)
+      }
       // HarmonyOS HAP updates are distributed outside electron-updater.
       if (MAIN_RUNTIME_POLICY.startAppUpdater) {
         new AppUpdater(() => mainWindow)

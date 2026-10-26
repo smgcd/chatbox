@@ -1,0 +1,140 @@
+/**
+ * LAN remote-host bridge (renderer side).
+ *
+ * The main process forwards HTTP commands here. This module deliberately only
+ * *calls the same functions the UI calls* - `submitNewUserMessage`,
+ * `stopAllMessageGenerations`, `createEmpty`, `rendererApplication.sessions` -
+ * so the remote client keeps 100% of the desktop behaviour (tools, MCP, skills,
+ * memory, approvals) without duplicating any logic.
+ */
+import type { RemoteHostCommand, RemoteHostEnvelope, RemoteHostReply, RemoteSessionSummary } from '@shared/remote-host'
+import { digestSession } from '@shared/remote-host'
+import { createMessage } from '@shared/types'
+import { currentGenerationService } from '@/adapters/CurrentGenerationService'
+import { rendererApplication } from '@/app/renderer-application'
+import { getLogger } from '@/lib/utils'
+import { getSessionAgentModeEntry, setSessionAgentMode } from '@/stores/session/agent-mode'
+import { createEmpty } from '@/stores/session/crud'
+import { stopAllMessageGenerations } from '@/stores/session/generation-cancellation'
+import { submitNewUserMessage } from '@/stores/session/messages'
+
+const log = getLogger('remote-host-bridge')
+
+async function readSession(sessionId: string) {
+  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  if (!session) return null
+  const digest = digestSession(session)
+  const agentModeEntry = getSessionAgentModeEntry(sessionId, session)
+  return {
+    ...digest,
+    agentMode: agentModeEntry.value,
+    agentModeLocked: Boolean(agentModeEntry.locked),
+  }
+}
+
+async function handleCommand(command: RemoteHostCommand): Promise<unknown> {
+  switch (command.op) {
+    case 'list-sessions': {
+      const records = await rendererApplication.sessions.listAllSessionsMeta()
+      const summaries: RemoteSessionSummary[] = records
+        .filter((record) => !record.archivedAt)
+        .map((record) => ({ id: record.id, name: record.name ?? '', createdAt: record.createdAt }))
+      summaries.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+      return summaries
+    }
+
+    case 'get-session': {
+      if (!command.sessionId) throw new Error('sessionId is required')
+      return readSession(command.sessionId)
+    }
+
+    case 'create-session': {
+      const session = await createEmpty('chat')
+      return { sessionId: session.id }
+    }
+
+    case 'send-message': {
+      if (!command.sessionId) throw new Error('sessionId is required')
+      const text = (command.text ?? '').trim()
+      if (!text) throw new Error('text is required')
+      const newUserMsg = createMessage('user', text)
+      // Generation can run for minutes; the UI never awaits it either. Reply
+      // immediately and let the client poll for progress.
+      void submitNewUserMessage(command.sessionId, { newUserMsg, needGenerating: true }).catch((error) => {
+        log.error('remote send-message failed', { sessionId: command.sessionId, error })
+      })
+      return { accepted: true }
+    }
+
+    case 'stop': {
+      if (!command.sessionId) throw new Error('sessionId is required')
+      await stopAllMessageGenerations(command.sessionId)
+      return { stopped: true }
+    }
+
+    case 'set-agent-mode': {
+      if (!command.sessionId) throw new Error('sessionId is required')
+      const value = command.value
+      if (value !== 'auto' && value !== 'on' && value !== 'off') throw new Error('value must be auto|on|off')
+      const entry = await setSessionAgentMode(command.sessionId, value)
+      return { agentMode: entry.value, locked: Boolean(entry.locked) }
+    }
+
+    // Tool-call approval: the desktop shows a dialog, the phone shows a bar.
+    case 'continue-paused': {
+      if (!command.sessionId || !command.messageId || !command.toolCallId) {
+        throw new Error('sessionId, messageId and toolCallId are required')
+      }
+      void currentGenerationService
+        .continuePausedToolCall(command.sessionId, command.messageId, command.toolCallId)
+        .catch((error) => log.error('continuePausedToolCall failed', { error }))
+      return { accepted: true }
+    }
+
+    case 'reject-paused': {
+      if (!command.sessionId || !command.messageId || !command.toolCallId) {
+        throw new Error('sessionId, messageId and toolCallId are required')
+      }
+      void currentGenerationService
+        .stopPausedToolCall(command.sessionId, command.messageId, command.toolCallId)
+        .catch((error) => log.error('stopPausedToolCall failed', { error }))
+      return { accepted: true }
+    }
+
+    default: {
+      throw new Error(`unknown op: ${(command as { op?: string }).op}`)
+    }
+  }
+}
+
+let installed = false
+
+export function initRemoteHostBridge(): void {
+  if (installed) return
+  const api = typeof window !== 'undefined' ? window.electronAPI : undefined
+  if (!api?.onRemoteHostCommand) {
+    // Web / mobile builds have no main process - nothing to bridge.
+    return
+  }
+  installed = true
+  api.onRemoteHostCommand((envelope: RemoteHostEnvelope) => {
+    const reply = (payload: RemoteHostReply) => {
+      try {
+        api.replyRemoteHostCommand(payload)
+      } catch (error) {
+        log.error('failed to send remote reply', { error })
+      }
+    }
+    void (async () => {
+      try {
+        const data = await handleCommand(envelope.command)
+        reply({ id: envelope.id, ok: true, data })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        log.error('remote command failed', { op: envelope.command.op, error: message })
+        reply({ id: envelope.id, ok: false, error: message })
+      }
+    })()
+  })
+  log.info('remote host bridge ready')
+}

@@ -39,11 +39,16 @@ export type ChatboxQaPreflight = {
 export type MainRuntimePolicyOptions = {
   isHarmonyBuild: boolean
   isPackaged: boolean
+  /** Set by --serve: hidden window, driven from a phone over the LAN. */
+  serveMode?: boolean
 }
 
 export type MainRuntimePolicy = {
   createTray: boolean
   isQa: boolean
+  /** LAN remote-host mode: hidden window, no tray, no shortcuts, no updater. */
+  isServe: boolean
+  skipTaskbar: boolean
   qaTaskId: string | null
   registerGlobalShortcuts: boolean
   registerProtocolClient: boolean
@@ -156,14 +161,18 @@ export function getChatboxQaPaths(env: ChatboxQaEnvironment = process.env): Chat
 
 export function getMainRuntimePolicy(env: ChatboxQaEnvironment, options: MainRuntimePolicyOptions): MainRuntimePolicy {
   const qaRuntime = getChatboxQaRuntime(env)
+  const serve = options.serveMode === true
 
   return {
-    createTray: !qaRuntime.enabled,
+    createTray: !qaRuntime.enabled && !serve,
     isQa: qaRuntime.enabled,
+    isServe: serve,
+    skipTaskbar: serve,
     qaTaskId: qaRuntime.taskId,
-    registerGlobalShortcuts: !qaRuntime.enabled,
-    registerProtocolClient: !qaRuntime.enabled,
-    requestSingleInstanceLock: options.isPackaged && !qaRuntime.enabled,
-    startAppUpdater: !options.isHarmonyBuild && !qaRuntime.enabled,
+    registerGlobalShortcuts: !qaRuntime.enabled && !serve,
+    registerProtocolClient: !qaRuntime.enabled && !serve,
+    // Serve mode must be able to run alongside the user's normal instance.
+    requestSingleInstanceLock: options.isPackaged && !qaRuntime.enabled && !serve,
+    startAppUpdater: !options.isHarmonyBuild && !qaRuntime.enabled && !serve,
   }
 }

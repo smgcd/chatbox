@@ -48,6 +48,11 @@ import './setup/protect'
 // Liquid Glass 边缘折射：给玻璃容器叠 SVG feDisplacementMap 折射
 initLiquidGlass()
 
+// LAN remote-host bridge (local-only): forward HTTP commands to the real
+// session/generation entry points. No-op outside the desktop shell.
+import { initRemoteHostBridge } from './remote-host/bridge'
+initRemoteHostBridge()
+
 // 引入移动端安全区域代码，主要为了解决异形屏幕的问题
 
 if (CHATBOX_BUILD_TARGET === 'mobile_app') {
