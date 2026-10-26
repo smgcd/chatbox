@@ -14,8 +14,10 @@
  *    generic IPC proxy.
  */
 import { randomBytes } from 'node:crypto'
+import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
+import path from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { ipcMain } from 'electron'
 import type { RemoteHostCommand, RemoteHostEnvelope, RemoteHostReply, RemoteProgressEvent } from '@shared/remote-host'
@@ -31,6 +33,34 @@ export interface RemoteHostServerHandle {
   close: () => void
 }
 
+/**
+ * The token is a long-lived device credential, not a per-launch nonce: it is
+ * stored in the profile so the iPad's cookie survives a Chatbox restart or a
+ * guard-driven crash recovery. Without this the phone would silently 401 after
+ * every restart and the reconnect banner could never clear.
+ * `--new-token` (or CHATBOX_REMOTE_TOKEN) rotates/overrides it.
+ */
+function loadOrCreateToken(tokenFile: string | null, rotate: boolean): string {
+  if (process.env.CHATBOX_REMOTE_TOKEN) return process.env.CHATBOX_REMOTE_TOKEN
+  if (!tokenFile) return randomBytes(16).toString('hex')
+  if (!rotate) {
+    try {
+      const existing = fs.readFileSync(tokenFile, 'utf8').trim()
+      if (/^[0-9a-f]{32}$/.test(existing)) return existing
+    } catch {
+      // first run
+    }
+  }
+  const token = randomBytes(16).toString('hex')
+  try {
+    fs.mkdirSync(path.dirname(tokenFile), { recursive: true })
+    fs.writeFileSync(tokenFile, token, { encoding: 'utf8', mode: 0o600 })
+  } catch (error) {
+    console.error('[remote-host] failed to persist token', error)
+  }
+  return token
+}
+
 type Pending = {
   resolve: (value: unknown) => void
   reject: (error: Error) => void
@@ -41,16 +71,37 @@ const pending = new Map<string, Pending>()
 const sseClients = new Set<http.ServerResponse>()
 let ipcInstalled = false
 
+/**
+ * Replay window for reconnects. Every frame gets a monotonic id and lands in a
+ * ring buffer; a browser that reconnects (iPad lock, WiFi blip, Safari killing
+ * the socket) sends `Last-Event-ID` automatically and we replay what it missed
+ * instead of leaving a hole in the transcript. 400 frames ~= 60s of streaming,
+ * well under 4 MB.
+ */
+const FRAME_HISTORY_LIMIT = 400
+let frameSeq = 0
+const frameHistory: { seq: number; payload: string }[] = []
+
 function broadcastProgress(event: RemoteProgressEvent): void {
+  frameSeq += 1
+  const payload = JSON.stringify(event)
+  frameHistory.push({ seq: frameSeq, payload })
+  if (frameHistory.length > FRAME_HISTORY_LIMIT) frameHistory.shift()
   if (sseClients.size === 0) return
-  const payload = `data: ${JSON.stringify(event)}\n\n`
+  const frame = `id: ${frameSeq}\ndata: ${payload}\n\n`
   for (const client of sseClients) {
     try {
-      client.write(payload)
+      client.write(frame)
     } catch {
       sseClients.delete(client)
     }
   }
+}
+
+/** Frames newer than the id the browser last saw (0 = fresh connection). */
+function framesSince(lastEventId: number): { seq: number; payload: string }[] {
+  if (!Number.isFinite(lastEventId) || lastEventId <= 0) return []
+  return frameHistory.filter((frame) => frame.seq > lastEventId)
 }
 
 function installIpc(): void {
@@ -175,9 +226,13 @@ function readBody(request: http.IncomingMessage): Promise<string> {
 export function startRemoteHostServer(options: {
   getWindow: () => BrowserWindow | null
   port: number
+  /** Where the persistent token lives (profile dir); null = in-memory only. */
+  tokenFile?: string | null
+  /** Force a fresh token (a phone that lost the cookie must re-open the URL). */
+  rotateToken?: boolean
 }): Promise<RemoteHostServerHandle> {
   installIpc()
-  const token = process.env.CHATBOX_REMOTE_TOKEN || randomBytes(16).toString('hex')
+  const token = loadOrCreateToken(options.tokenFile ?? null, options.rotateToken === true)
 
   const server = http.createServer((request, response) => {
     const remote = request.socket.remoteAddress
@@ -229,7 +284,22 @@ export function startRemoteHostServer(options: {
         connection: 'keep-alive',
         'x-accel-buffering': 'no',
       })
+      // Retry fast: the phone is on the same WiFi, a long backoff just looks broken.
+      response.write('retry: 1500\n\n')
       response.write(': connected\n\n')
+      const lastEventIdRaw = request.headers['last-event-id'] ?? url.searchParams.get('since') ?? ''
+      const lastEventId = Number(Array.isArray(lastEventIdRaw) ? lastEventIdRaw[0] : lastEventIdRaw)
+      const missed = framesSince(lastEventId)
+      for (const frame of missed) {
+        try {
+          response.write(`id: ${frame.seq}\ndata: ${frame.payload}\n\n`)
+        } catch {
+          break
+        }
+      }
+      // Tell the client how many frames were replayed (and where the stream now
+      // stands) so it can decide whether a full snapshot refresh is needed.
+      response.write(`data: ${JSON.stringify({ type: 'hello', seq: frameSeq, replayed: missed.length })}\n\n`)
       sseClients.add(response)
       const heartbeat = setInterval(() => {
         try {
@@ -304,5 +374,5 @@ export function startRemoteHostServer(options: {
 
 /** Written to a file next to the log so it can be read without scrolling logs. */
 export function describeRemoteUrl(handle: RemoteHostServerHandle): string {
-  return `Chatbox 局域网遥控\n地址：${handle.url}\n（同一 WiFi 下用 iPad Safari 打开；token 每次启动都会变，重启后请重新读取本文件）\n`
+  return `Chatbox 局域网遥控\n地址：${handle.url}\n（同一 WiFi 下用 iPad Safari 打开一次即可：token 已存在本机配置里，重启/崩溃恢复后同一个地址继续可用；要作废旧设备请用 --serve --new-token 启动一次）\n`
 }

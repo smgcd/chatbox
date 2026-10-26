@@ -14,14 +14,18 @@
  *    reasoning/text as they arrive, not on the 2s persistence cadence.
  */
 import type {
+  RemoteCapabilities,
   RemoteHostCommand,
   RemoteHostEnvelope,
   RemoteHostReply,
   RemoteProgressEvent,
   RemoteSessionSummary,
+  RemoteSessionView,
 } from '@shared/remote-host'
 import { buildProgressEvent, digestSession } from '@shared/remote-host'
-import { createMessage } from '@shared/types'
+import type { CommandApprovalMode } from '@shared/types/command-execution'
+import { resolveCommandApprovalMode } from '@shared/types/command-execution'
+import { createMessage, type Session } from '@shared/types'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
@@ -30,6 +34,9 @@ import { createEmpty } from '@/stores/session/crud'
 import { stopAllMessageGenerations } from '@/stores/session/generation-cancellation'
 import { submitNewUserMessage } from '@/stores/session/messages'
 import { syncSessionAutoTitle } from '@/stores/session/naming'
+import { getSessionWebBrowsing } from '@/stores/session/utils'
+import { settingsStore } from '@/stores/settingsStore'
+import { uiStore } from '@/stores/uiStore'
 
 const log = getLogger('remote-host-bridge')
 
@@ -147,11 +154,91 @@ async function forceAgentModeOn(sessionId: string): Promise<void> {
   }
 }
 
-async function readSession(sessionId: string) {
+/**
+ * Work mode parity.
+ *
+ * The phone has no Work Mode panel, so this instance has to *be* the desktop's
+ * "Full Access" configuration rather than a quieter cousin of it: approval
+ * permanently skipped (otherwise every command would stop and wait for a dialog
+ * nobody is standing at), web search on, agent mode on. Everything else
+ * (skills, MCP, knowledge base, Soul, memory) already comes from the same global
+ * settings because we drive the real renderer.
+ */
+const WORK_APPROVAL_MODE: CommandApprovalMode = 'full_access'
+
+/** New chats inherit the policy even when the desktop UI creates them. */
+function primeNewSessionDefaults(): void {
+  try {
+    const store = uiStore.getState()
+    store.setNewSessionCommandApprovalModeDefault(WORK_APPROVAL_MODE)
+    if (store.newSessionWebBrowsingDefault !== true) {
+      uiStore.setState({ newSessionWebBrowsingDefault: true })
+    }
+  } catch (error) {
+    log.error('failed to prime new-session defaults', { error })
+  }
+}
+
+async function ensureWorkModeSettings(sessionId: string): Promise<void> {
+  try {
+    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+    if (!session) return
+    if (!getSessionWebBrowsing(sessionId, session.settings?.provider)) {
+      uiStore.getState().setSessionWebBrowsing(sessionId, true)
+      log.info('work mode: enabled web browsing', { sessionId })
+    }
+    if (resolveCommandApprovalMode(session.settings ?? {}) === WORK_APPROVAL_MODE) return
+    await rendererApplication.sessions.updateSession(sessionId, (current) => {
+      if (!current) throw new Error('Session not found')
+      return {
+        ...current,
+        settings: {
+          ...current.settings,
+          // Same pair useCommandApprovalModeState writes, so both entry points agree.
+          agentFullAccess: true,
+          commandApprovalMode: WORK_APPROVAL_MODE,
+        },
+      }
+    })
+    log.info('work mode: approval forced to full access', { sessionId })
+  } catch (error) {
+    log.error('failed to apply work mode settings', { sessionId, error })
+  }
+}
+
+function readCapabilities(session: Session): RemoteCapabilities {
+  const entry = getSessionAgentModeEntry(session.id, session)
+  let skills = 0
+  let mcp = 0
+  try {
+    const globalSettings = settingsStore.getState().getSettings()
+    skills = globalSettings.skills?.enabledSkillNames?.length ?? 0
+    mcp =
+      (globalSettings.mcp?.servers?.filter((server) => server.enabled).length ?? 0) +
+      (globalSettings.mcp?.enabledBuiltinServers?.length ?? 0)
+  } catch (error) {
+    log.error('failed to read capability settings', { error })
+  }
+  return {
+    agentMode: entry.value,
+    agentModeLocked: Boolean(entry.locked),
+    approvalMode: resolveCommandApprovalMode(session.settings ?? {}),
+    webBrowsing: getSessionWebBrowsing(session.id, session.settings?.provider),
+    skills,
+    mcp,
+  }
+}
+
+async function readSession(sessionId: string): Promise<RemoteSessionView | null> {
   const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
   if (!session) return null
-  const digest = digestSession(session)
-  const agentModeEntry = getSessionAgentModeEntry(sessionId, session)
+  // Opening a session in the remote host applies the work-mode policy, so the
+  // capability chips never claim something the next turn would not do.
+  await ensureWorkModeSettings(sessionId)
+  const patched = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const current = patched ?? session
+  const digest = digestSession(current)
+  const agentModeEntry = getSessionAgentModeEntry(sessionId, current)
   // Opening a session that is mid-generation should start streaming right away.
   if (digest.generating || digest.busy) {
     ensureProgress(sessionId)
@@ -162,6 +249,7 @@ async function readSession(sessionId: string) {
     ...digest,
     agentMode: agentModeEntry.value,
     agentModeLocked: Boolean(agentModeEntry.locked),
+    capabilities: readCapabilities(current),
   }
 }
 
@@ -183,6 +271,7 @@ async function handleCommand(command: RemoteHostCommand): Promise<unknown> {
 
     case 'create-session': {
       const session = await createEmpty('chat')
+      await ensureWorkModeSettings(session.id)
       await forceAgentModeOn(session.id)
       return { sessionId: session.id }
     }
@@ -191,6 +280,9 @@ async function handleCommand(command: RemoteHostCommand): Promise<unknown> {
       if (!command.sessionId) throw new Error('sessionId is required')
       const text = (command.text ?? '').trim()
       if (!text) throw new Error('text is required')
+      // Policy first: a session that inherited "smart" would pause on the first
+      // command, and nobody is at the desk to click that dialog.
+      await ensureWorkModeSettings(command.sessionId)
       await forceAgentModeOn(command.sessionId)
       const newUserMsg = createMessage('user', text)
       // Generation can run for minutes; the UI never awaits it either. Reply
@@ -254,6 +346,7 @@ export function initRemoteHostBridge(): void {
     return
   }
   installed = true
+  primeNewSessionDefaults()
   api.onRemoteHostCommand((envelope: RemoteHostEnvelope) => {
     const reply = (payload: RemoteHostReply) => {
       try {

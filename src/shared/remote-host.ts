@@ -83,6 +83,29 @@ export interface RemoteSessionSummary {
   createdAt?: number
 }
 
+/**
+ * What this instance can actually do right now. The phone has no Work Mode
+ * panel, so it displays the effective policy instead of letting it be toggled -
+ * this is also how we prove in the UI that the remote run is not degraded.
+ */
+export interface RemoteCapabilities {
+  agentMode: string
+  agentModeLocked: boolean
+  approvalMode: 'always_ask' | 'smart' | 'full_access'
+  webBrowsing: boolean
+  /** Enabled skill count, from the same global settings the desktop uses. */
+  skills: number
+  /** Enabled MCP servers (custom + builtin). */
+  mcp: number
+}
+
+/** Payload of `get-session`: the digest plus the live policy snapshot. */
+export interface RemoteSessionView extends RemoteSessionDigest {
+  agentMode?: string
+  agentModeLocked?: boolean
+  capabilities: RemoteCapabilities
+}
+
 /** Real-time streaming frame pushed from the renderer, relayed over SSE. */
 export interface RemoteProgressEvent {
   type: 'progress'

@@ -286,15 +286,68 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     transition: opacity .22s var(--ease), transform .22s var(--ease);
   }
   .hint.show { opacity: .92; transform: translate(-50%, 0); }
+  /* ── connection banner ───────────────────────────────────── */  .banner {
+    position: fixed; left: 50%; z-index: 30;
+    top: calc(env(safe-area-inset-top) + 88px);
+    transform: translate(-50%, -8px);
+    padding: 7px 14px; border-radius: 999px;
+    background: color-mix(in srgb, var(--warn) 16%, var(--panel));
+    border: 1px solid color-mix(in srgb, var(--warn) 42%, var(--line));
+    color: var(--warn);
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    box-shadow: var(--shadow-md);
+    opacity: 0; pointer-events: none;
+    transition: opacity .2s var(--ease), transform .2s var(--ease);
+  }
+  .banner.show { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ── capability bar (work mode, read-only) ───────────────── */
+  .caps {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 14px 7px;
+    font-size: 11.5px; color: var(--dim);
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+  .caps:empty { display: none; }
+  .caps .chip { flex: 0 0 auto; padding: 2px 7px; border-radius: 7px; background: var(--panel-2); }
+  .caps .chip.ok { color: var(--ok); }
+  .caps .chip.warn { color: var(--warn); }
+
+  /* ── theme lock: html[data-theme] outranks the media query ── */
+  html[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f6f7f9; --panel: #ffffff; --panel-2: #eef0f4;
+    --line: rgba(17, 20, 26, .09); --line-strong: rgba(17, 20, 26, .20);
+    --fg: #14161a; --fg-soft: #3d434d; --dim: #6d7580;
+    --accent: #2f6bff; --accent-ink: #ffffff;
+    --ok: #1f9d63; --warn: #b97708; --err: #d1444a;
+    --shadow-sm: 0 1px 2px rgba(16, 20, 28, .06), 0 1px 1px rgba(16, 20, 28, .04);
+    --shadow-md: 0 8px 24px rgba(16, 20, 28, .10);
+  }
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #0b0c0f; --panel: #16181d; --panel-2: #1d2027;
+    --line: rgba(255, 255, 255, .09); --line-strong: rgba(255, 255, 255, .24);
+    --fg: #e9ecf2; --fg-soft: #c3c9d4; --dim: #8d95a3;
+    --accent: #4f7dff; --accent-ink: #ffffff;
+    --ok: #4ecf95; --warn: #f0b429; --err: #ff7a7f;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, .5);
+    --shadow-md: 0 12px 32px rgba(0, 0, 0, .55);
+  }
 </style>
 </head>
 <body>
 <header>
   <span id="dot" class="status"></span>
   <select id="sessions" aria-label="会话"></select>
+  <button id="themeBtn" class="icon" aria-label="切换主题" title="跟随系统 / 浅色 / 深色">◐</button>
   <button id="newBtn" class="icon" aria-label="新建会话">＋</button>
   <button id="stopBtn" class="danger" disabled>停止</button>
 </header>
+<div id="caps" class="caps"></div>
 <main id="log"><div class="empty">正在连接…</div></main>
 <button id="jumpBtn" class="jump">回到底部</button>
 <footer>
@@ -304,6 +357,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   </button>
 </footer>
 <div id="hint" class="hint"></div>
+<div id="banner" class="banner">实时连接中断，正在重连…</div>
 <script>
 (function () {
   var sessionsEl = document.getElementById('sessions');
@@ -315,6 +369,9 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   var dotEl = document.getElementById('dot');
   var hintEl = document.getElementById('hint');
   var jumpEl = document.getElementById('jumpBtn');
+  var bannerEl = document.getElementById('banner');
+  var capsEl = document.getElementById('caps');
+  var themeEl = document.getElementById('themeBtn');
 
   var state = {
     sessionId: null,
@@ -325,10 +382,18 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     source: null,
     pinned: true,
     expanded: {},
+    userOpened: {},
     thinkStart: {},
     thinkEnd: {},
     nodes: {},
-    emptyShown: false
+    emptyShown: false,
+    // live-stream bookkeeping: lastSeq is what the SSE stream last handed us,
+    // lost flips the "reconnecting" banner on.
+    lastSeq: 0,
+    lost: false,
+    retryTimer: null,
+    lastFrameAt: 0,
+    caps: ''
   };
 
   var CARET = '<svg class="think-caret" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -343,6 +408,58 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     hintEl.textContent = text;
     hintEl.className = 'hint show';
     setTimeout(function () { hintEl.className = 'hint'; }, 2200);
+  }
+
+  // Persistent (not auto-hiding) connection banner.
+  function setBanner(show, text) {
+    if (text) bannerEl.textContent = text;
+    bannerEl.className = show ? 'banner show' : 'banner';
+  }
+
+  // Read-only mirror of the desktop's Work Mode: proves the remote run is not a
+  // degraded one. Rebuilt only when the text actually changes.
+  function renderCaps(caps) {
+    if (!caps) {
+      if (state.caps) { state.caps = ''; capsEl.innerHTML = ''; }
+      return;
+    }
+    var approval = caps.approvalMode === 'full_access'
+      ? '完全访问'
+      : (caps.approvalMode === 'smart' ? '智能审批' : '每次确认');
+    var parts = [];
+    parts.push('<span class="chip' + (caps.agentMode === 'on' ? ' ok' : ' warn') + '">'
+      + (caps.agentMode === 'on' ? '智能体已开' : '智能体未开') + '</span>');
+    parts.push('<span class="chip' + (caps.approvalMode === 'full_access' ? ' ok' : ' warn') + '">'
+      + esc(approval) + '</span>');
+    parts.push('<span class="chip' + (caps.webBrowsing ? ' ok' : ' warn') + '">联网搜索'
+      + (caps.webBrowsing ? '开' : '关') + '</span>');
+    parts.push('<span class="chip">技能 ' + (caps.skills || 0) + '</span>');
+    parts.push('<span class="chip">MCP ' + (caps.mcp || 0) + '</span>');
+    var html = parts.join('');
+    if (html !== state.caps) {
+      state.caps = html;
+      capsEl.innerHTML = html;
+    }
+  }
+
+  // ── theme lock: system / light / dark, remembered per device ──
+  var THEME_KEY = 'cbx-theme';
+
+  function applyTheme(value) {
+    var root = document.documentElement;
+    if (value === 'light' || value === 'dark') root.setAttribute('data-theme', value);
+    else root.removeAttribute('data-theme');
+    themeEl.textContent = value === 'light' ? '☀' : (value === 'dark' ? '☾' : '◐');
+  }
+
+  function initTheme() {
+    var initial = '';
+    try { initial = localStorage.getItem(THEME_KEY) || ''; } catch (error) { /* private mode */ }
+    try {
+      var query = new URLSearchParams(location.search).get('theme');
+      if (query === 'light' || query === 'dark') initial = query;
+    } catch (error) { /* old Safari */ }
+    applyTheme(initial === 'light' || initial === 'dark' ? initial : '');
   }
 
   function api(op, payload) {
@@ -626,6 +743,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       state.nodes = {};
       logEl.innerHTML = '<div class="empty">这个会话还没有消息。<br>在下面输入，就是对它说话。</div>';
       state.emptyShown = true;
+      renderCaps(null);
       syncStatus(false);
       return;
     }
@@ -638,6 +756,10 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       // finished has no honest duration to show.
       if (message.generating && message.reasoning && !state.thinkStart[message.id]) {
         state.thinkStart[message.id] = Date.now();
+      }
+      // Finished turns collapse their thinking row (unless the user pinned it open).
+      if (!message.generating && state.expanded[message.id] && !state.userOpened[message.id]) {
+        state.expanded[message.id] = false;
       }
       list.push(message);
     }
@@ -654,6 +776,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       reconcile(list);
     }
 
+    renderCaps(session.capabilities || null);
     syncStatus(Boolean(session.busy || session.generating));
     if (stick) scrollToBottom('auto');
     syncPinned();
@@ -704,6 +827,12 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       }
       var body = thinkNode.querySelector('.think-text');
       if (body && thinkNode.classList.contains('open')) setText(body, event.reasoning || '');
+      // Thinking is over: fold the transcript away unless the user opened it
+      // themselves after the turn finished.
+      if (!event.generating && state.expanded[event.messageId] && !state.userOpened[event.messageId]) {
+        state.expanded[event.messageId] = false;
+        thinkNode.classList.remove('open');
+      }
     }
     var answer = node.querySelector('.answer');
     if (answer) {
@@ -728,16 +857,55 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   }
 
   function connectEvents() {
-    if (state.source) state.source.close();
+    if (state.retryTimer) { clearTimeout(state.retryTimer); state.retryTimer = null; }
+    if (state.source) { state.source.close(); state.source = null; }
     var source = new EventSource('/api/events');
     state.source = source;
-    source.onmessage = function (event) {
-      try {
-        var payload = JSON.parse(event.data);
-        if (payload && payload.type === 'progress') applyProgress(payload);
-      } catch (error) { /* ignore malformed frame */ }
+    source.onopen = function () {
+      var wasLost = state.lost;
+      state.lost = false;
+      state.lastFrameAt = Date.now();
+      setBanner(false);
+      // A reconnect can leave a hole: the server keeps ~400 frames and replays
+      // from Last-Event-ID, but the authoritative answer is always the snapshot.
+      if (wasLost) { hint('已重新连接'); resync(); }
     };
-    source.onerror = function () { hint('实时连接断开，正在重连…'); };
+    source.onmessage = function (event) {
+      var payload;
+      try { payload = JSON.parse(event.data); } catch (error) { return; }
+      if (!payload) return;
+      if (event.lastEventId) state.lastSeq = Number(event.lastEventId) || state.lastSeq;
+      if (payload.type === 'hello') {
+        if (typeof payload.seq === 'number') state.lastSeq = payload.seq;
+        return;
+      }
+      if (payload.type === 'progress') {
+        state.lastFrameAt = Date.now();
+        if (state.lost) { state.lost = false; setBanner(false); }
+        applyProgress(payload);
+      }
+    };
+    source.onerror = function () {
+      if (!state.lost) {
+        state.lost = true;
+        setBanner(true, state.busy ? '实时连接中断，正在重连…（任务仍在电脑上继续）' : '实时连接中断，正在重连…');
+      }
+      // EventSource retries by itself, but a suspended iPad tab can give up
+      // silently, so recreate the socket on a slow timer as a safety net.
+      if (state.retryTimer) clearTimeout(state.retryTimer);
+      state.retryTimer = setTimeout(function () {
+        state.retryTimer = null;
+        if (state.lost) connectEvents();
+      }, 8000);
+    };
+  }
+
+  // Pull the authoritative snapshot right away (frame replay alone can leave a
+  // hole, and the title / tool list only come from the session).
+  function resync() {
+    state.inflight = false;
+    if (state.timer) clearTimeout(state.timer);
+    if (state.sessionId) tick();
   }
 
   function scheduleNext() {
@@ -753,9 +921,16 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       .then(function (session) {
         // Drop stale responses: switching sessions while a poll is in flight
         // used to overwrite the new session's content.
-        if (state.sessionId === requested) render(session);
+        if (state.sessionId === requested) {
+          render(session);
+          // Reachable again: only clear the banner if the stream itself is up.
+          if (!state.lost) setBanner(false);
+        }
       })
-      .catch(function (error) { hint(error.message); })
+      .catch(function (error) {
+        setBanner(true, state.busy ? '与电脑失联，正在重试…（任务仍在电脑上继续）' : '与电脑失联，正在重试…');
+        hint(error.message);
+      })
       .then(function () { state.inflight = false; scheduleNext(); });
   }
 
@@ -817,7 +992,10 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     var expandBtn = target.closest('[data-expand]');
     if (expandBtn) {
       var id = expandBtn.getAttribute('data-expand');
-      state.expanded[id] = !state.expanded[id];
+      var next = !state.expanded[id];
+      state.expanded[id] = next;
+      // Remember the user's own choice: an auto-collapse must never fight it.
+      state.userOpened[id] = next;
       var box = logEl.querySelector('[data-think="' + id + '"]');
       if (box) box.classList.toggle('open', Boolean(state.expanded[id]));
       return;
@@ -840,6 +1018,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   sessionsEl.addEventListener('change', function () {
     state.sessionId = sessionsEl.value;
     state.expanded = {};
+    state.userOpened = {};
     state.thinkStart = {};
     state.thinkEnd = {};
     state.nodes = {};
@@ -877,8 +1056,51 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       .catch(function (error) { hint(error.message); });
   });
 
+  themeEl.addEventListener('click', function () {
+    var current = document.documentElement.getAttribute('data-theme') || '';
+    var next = current === '' ? 'light' : (current === 'light' ? 'dark' : '');
+    applyTheme(next);
+    try {
+      if (next) localStorage.setItem(THEME_KEY, next);
+      else localStorage.removeItem(THEME_KEY);
+    } catch (error) { /* private mode: keep it session-only */ }
+    hint(next === '' ? '主题：跟随系统' : (next === 'light' ? '主题：浅色（已锁定）' : '主题：深色（已锁定）'));
+  });
+
+  // Frames stop arriving with no onerror (half-open socket, suspended tab).
+  // While a turn is running a >12s gap is a dead stream, not an idle one.
+  setInterval(function () {
+    if (document.visibilityState === 'hidden') return;
+    if (state.lost || !state.busy) return;
+    if (state.lastFrameAt && Date.now() - state.lastFrameAt > 12000) {
+      state.lost = true;
+      setBanner(true, '实时连接无响应，正在重连…（任务仍在电脑上继续）');
+      connectEvents();
+    }
+  }, 4000);
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    // iPad suspends the SSE socket when Safari goes background.
+    if (state.lost || !state.source || state.source.readyState === 2) {
+      state.lost = true;
+      connectEvents();
+    }
+    resync();
+  });
+
+  initTheme();
   connectEvents();
   setInterval(refreshTitles, 8000);
+  // Debug handle: lets the iPad's Web Inspector (or a remote test) inspect and
+  // drive the renderer without a rebuild. The page is token-gated and LAN-only.
+  window.__cbx = {
+    state: state,
+    applyProgress: applyProgress,
+    render: render,
+    resync: resync,
+    reconnect: connectEvents
+  };
   loadSessions().catch(function (error) {
     logEl.innerHTML = '<div class="empty">连接失败：' + esc(error.message) + '<br>请确认与电脑在同一 WiFi，并用带 token 的链接打开。</div>';
   });

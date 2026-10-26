@@ -82,6 +82,7 @@ import {
 import * as windowState from './window_state'
 import { loadWorkspaceInstructions } from './workspace-instructions'
 import { describeRemoteUrl, startRemoteHostServer } from './remote-server'
+import { installServeAutostart } from './serve-autostart'
 
 const IS_HARMONY_BUILD = process.env.CHATBOX_BUILD_TARGET === 'harmony_app'
 const IS_HARMONY_KB_ENABLED = process.env.CHATBOX_HARMONY_KB_ENABLED === 'true'
@@ -714,17 +715,107 @@ async function startRemoteServeMode(getWindow: () => BrowserWindow | null) {
   const portArg = process.argv.find((arg) => arg.startsWith('--port='))
   const parsedPort = portArg ? Number(portArg.slice('--port='.length)) : 8787
   const port = Number.isInteger(parsedPort) && parsedPort > 0 && parsedPort < 65536 ? parsedPort : 8787
-  try {
-    const handle = await startRemoteHostServer({ getWindow, port })
-    const urlFile = path.join(app.getPath('userData'), 'remote-host-url.txt')
+  attachServeResilience(getWindow)
+  let handle: Awaited<ReturnType<typeof startRemoteHostServer>> | null = null
+  const tokenFile = path.join(app.getPath('userData'), 'remote-host-token.txt')
+  const rotateToken = process.argv.includes('--new-token')
+  // A crash can leave the old process holding the port for a moment; retrying is
+  // cheaper than showing up dead after a restart.
+  for (let attempt = 0; attempt < 3 && !handle; attempt += 1) {
     try {
-      fs.writeFileSync(urlFile, describeRemoteUrl(handle), 'utf8')
-      log.info(`[remote-host] url written to ${urlFile}`)
+      handle = await startRemoteHostServer({ getWindow, port, tokenFile, rotateToken })
     } catch (error) {
-      log.error('[remote-host] failed to write url file', error)
+      log.error(`[remote-host] failed to start server (attempt ${attempt + 1}/3)`, error)
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 2000))
+    }
+  }
+  if (!handle) return
+  const urlFile = path.join(app.getPath('userData'), 'remote-host-url.txt')
+  try {
+    fs.writeFileSync(urlFile, describeRemoteUrl(handle), 'utf8')
+    log.info(`[remote-host] url written to ${urlFile}`)
+  } catch (error) {
+    log.error('[remote-host] failed to write url file', error)
+  }
+  await setupServeAutostart(handle.port)
+}
+
+/**
+ * Serve mode has nobody behind the keyboard, so it heals itself: a dead renderer
+ * is reloaded (that is where the whole generation loop lives), and main-process
+ * errors are logged instead of taking the service down.
+ */
+function attachServeResilience(getWindow: () => BrowserWindow | null): void {
+  if (!MAIN_RUNTIME_POLICY.isServe) return
+  let reloads = 0
+  const reload = (reason: string) => {
+    reloads += 1
+    if (reloads > 8) {
+      log.error('[remote-host] too many renderer restarts, backing off', { reason, reloads })
+      return
+    }
+    log.error('[remote-host] renderer unhealthy, reloading', { reason, reloads })
+    try {
+      const window = getWindow()
+      if (window && !window.isDestroyed()) {
+        window.webContents.reload()
+        return
+      }
+      void createWindow()
+    } catch (error) {
+      log.error('[remote-host] reload failed', error)
+    }
+  }
+  // Reset the counter once things have been healthy for a while.
+  setInterval(() => {
+    reloads = 0
+  }, 10 * 60_000)
+  app.on('render-process-gone', (_event, _contents, details) => {
+    reload(`render-process-gone:${details.reason}`)
+  })
+  app.on('child-process-gone', (_event, details) => {
+    log.warn('[remote-host] child process gone', details)
+  })
+  process.on('unhandledRejection', (reason) => {
+    log.error('[remote-host] unhandled rejection', reason)
+  })
+  process.on('uncaughtException', (error) => {
+    reviewServeException(error)
+  })
+}
+
+function reviewServeException(error: unknown): void {
+  if (!MAIN_RUNTIME_POLICY.isServe) {
+    log.error('[remote-host] uncaught exception', error)
+    return
+  }
+  // Staying up beats a clean exit here: the phone would otherwise go silent with
+  // no way to restart us until the next guard tick.
+  log.error('[remote-host] uncaught exception (kept alive)', error)
+}
+
+async function setupServeAutostart(port: number): Promise<void> {
+  if (process.platform !== 'win32' || !app.isPackaged) {
+    log.info('[remote-host] autostart: skipped (windows packaged builds only)')
+    return
+  }
+  if (process.argv.includes('--no-autostart')) {
+    log.info('[remote-host] autostart: disabled by --no-autostart')
+    return
+  }
+  const installed = await installServeAutostart({ port })
+  log.info('[remote-host] autostart', { installed })
+  // Killing the logon race: the built-in auto-launch would open the visible
+  // window instead of the remote host, and the single-instance lock would then
+  // block serve mode until somebody closed it.
+  try {
+    if (getSettings().autoLaunch) {
+      await autoLauncher.ensure(false)
+      store.set('settings', { ...getSettings(), autoLaunch: false })
+      log.info('[remote-host] autostart: disabled the interactive auto-launch to avoid a logon race')
     }
   } catch (error) {
-    log.error('[remote-host] failed to start server', error)
+    log.error('[remote-host] autostart: could not disable interactive auto-launch', error)
   }
 }
 
