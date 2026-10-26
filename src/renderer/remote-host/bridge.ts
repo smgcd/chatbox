@@ -29,6 +29,7 @@ import { getSessionAgentModeEntry, setSessionAgentMode } from '@/stores/session/
 import { createEmpty } from '@/stores/session/crud'
 import { stopAllMessageGenerations } from '@/stores/session/generation-cancellation'
 import { submitNewUserMessage } from '@/stores/session/messages'
+import { syncSessionAutoTitle } from '@/stores/session/naming'
 
 const log = getLogger('remote-host-bridge')
 
@@ -51,12 +52,31 @@ function emitProgress(event: RemoteProgressEvent): void {
 let progressTimer: ReturnType<typeof setInterval> | null = null
 let progressSessionId: string | null = null
 let idleTicks = 0
+let wasActive = false
+
+/**
+ * The hidden window has no chat route mounted, so the auto-title effect never
+ * runs on its own; ask the official naming service directly once a session has
+ * content.
+ */
+function maybeAutoTitle(sessionId: string): void {
+  try {
+    const session = rendererApplication.sessionQueryBridge.getCachedSession(sessionId)
+    if (!session || !session.messages?.length) return
+    const name = (session.name ?? '').trim()
+    if (name && name !== 'Untitled' && name !== 'New Chat') return
+    syncSessionAutoTitle(session)
+  } catch (error) {
+    log.error('auto title failed', { sessionId, error })
+  }
+}
 
 function stopProgress(): void {
   if (progressTimer) clearInterval(progressTimer)
   progressTimer = null
   progressSessionId = null
   idleTicks = 0
+  wasActive = false
 }
 
 /** Returns true while the message is still producing (streaming or tools running). */
@@ -95,6 +115,10 @@ function ensureProgress(sessionId: string): void {
       log.error('progress tick failed', { error })
     }
     idleTicks = active ? 0 : idleTicks + 1
+    if (wasActive && !active && progressSessionId) {
+      maybeAutoTitle(progressSessionId)
+    }
+    wasActive = active
     if (idleTicks >= IDLE_TICKS_BEFORE_STOP) {
       stopProgress()
     }
@@ -131,6 +155,8 @@ async function readSession(sessionId: string) {
   // Opening a session that is mid-generation should start streaming right away.
   if (digest.generating || digest.busy) {
     ensureProgress(sessionId)
+  } else {
+    maybeAutoTitle(sessionId)
   }
   return {
     ...digest,
