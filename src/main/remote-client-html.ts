@@ -36,6 +36,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     --panel: #ffffff;
     --panel-2: #eef0f4;
     --line: rgba(17, 20, 26, .09);
+    --line-strong: rgba(17, 20, 26, .20);
     --fg: #14161a;
     --fg-soft: #3d434d;
     --dim: #6d7580;
@@ -56,6 +57,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       --panel: #16181d;
       --panel-2: #1d2027;
       --line: rgba(255, 255, 255, .09);
+      --line-strong: rgba(255, 255, 255, .24);
       --fg: #e9ecf2;
       --fg-soft: #c3c9d4;
       --dim: #8d95a3;
@@ -127,9 +129,10 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     display: flex; flex-direction: column; gap: 18px;
   }
 
-  .turn { display: flex; flex-direction: column; gap: 8px; animation: turn-in .28s var(--ease) both; }
+  .turn { display: flex; flex-direction: column; gap: 8px; }
+  .turn.new { animation: turn-in .28s var(--ease) both; }
   @keyframes turn-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  @media (prefers-reduced-motion: reduce) { .turn { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .turn.new { animation: none; } }
 
   .turn.user { align-items: flex-end; }
   .user-bubble {
@@ -162,6 +165,17 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     overflow-x: auto; margin: 10px 0;
   }
   .answer .h { display: block; font-size: 15.5px; font-weight: 650; margin: 12px 0 4px; }
+  .answer .li { display: block; padding-left: 2px; margin: 2px 0; }
+  .answer .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 10px 0; }
+  .answer table { border-collapse: collapse; width: 100%; font-size: 13.5px; white-space: normal; }
+  .answer th, .answer td {
+    border: 1px solid var(--line-strong);
+    padding: 8px 10px; text-align: left; vertical-align: top;
+    white-space: normal; line-height: 1.5;
+  }
+  .answer th { background: var(--panel-2); font-weight: 650; color: var(--fg); white-space: nowrap; }
+  .answer td { color: var(--fg-soft); }
+  .answer tr:nth-child(even) td { background: color-mix(in srgb, var(--panel-2) 45%, transparent); }
 
   /* thinking row: one line, tap to expand */
   .think { border: 1px solid var(--line); border-radius: 13px; background: var(--panel); overflow: hidden; transition: border-color .2s var(--ease); }
@@ -312,7 +326,9 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     pinned: true,
     expanded: {},
     thinkStart: {},
-    thinkEnd: {}
+    thinkEnd: {},
+    nodes: {},
+    emptyShown: false
   };
 
   var CARET = '<svg class="think-caret" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
@@ -392,7 +408,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
           rows.push(splitRow(lines[j]));
           j += 1;
         }
-        var table = '<table><thead><tr>';
+        var table = '<div class="table-wrap"><table><thead><tr>';
         for (var h = 0; h < head.length; h++) table += '<th>' + head[h] + '</th>';
         table += '</tr></thead><tbody>';
         for (var r = 0; r < rows.length; r++) {
@@ -400,7 +416,7 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
           for (var c = 0; c < rows[r].length; c++) table += '<td>' + rows[r][c] + '</td>';
           table += '</tr>';
         }
-        table += '</tbody></table>';
+        table += '</tbody></table></div>';
         outLines.push(table);
         i = j - 1;
         continue;
@@ -493,8 +509,11 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
   }
 
   function syncStatus(next) {
+    var value = Boolean(next);
+    // Called on every stream frame; bail out unless the state actually flipped.
+    if (value === state.busy) return;
     var wasBusy = state.busy;
-    state.busy = Boolean(next);
+    state.busy = value;
     dotEl.className = 'status' + (state.busy ? ' busy' : '');
     stopEl.disabled = !state.busy;
     stopEl.className = 'danger' + (state.busy ? ' on' : '');
@@ -506,14 +525,112 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     }
   }
 
+  // Signature of everything a turn actually renders: if it did not change, we
+  // must not touch the DOM (a full rebuild flickered the whole page every 3s).
+  function turnSignature(message) {
+    var tools = (message.tools || []).map(function (tool) {
+      return tool.toolCallId + ':' + tool.state + ':' + (tool.duration || 0);
+    }).join(',');
+    return [message.generating ? 1 : 0, message.error || '', tools, message.text || '', message.reasoning || ''].join('\u0001');
+  }
+
+  function createTurn(message) {
+    var holder = document.createElement('div');
+    holder.innerHTML = turnHtml(message);
+    var node = holder.firstElementChild;
+    if (!node) return null;
+    node.classList.add('new');
+    node.__sig = turnSignature(message);
+    state.nodes[message.id] = node;
+    return node;
+  }
+
+  function updateTurn(node, message) {
+    node.__sig = turnSignature(message);
+    if (message.role === 'user') {
+      var bubble = node.querySelector('.user-bubble');
+      if (bubble) bubble.textContent = message.text || '';
+      return;
+    }
+    var think = node.querySelector('[data-think]');
+    var thinking = Boolean(message.generating && !message.text);
+    if (!think && (message.reasoning || thinking)) {
+      // First reasoning arrived after the turn was rendered: rebuild this turn.
+      var holder = document.createElement('div');
+      holder.innerHTML = turnHtml(message);
+      var fresh = holder.firstElementChild;
+      if (fresh) {
+        node.innerHTML = fresh.innerHTML;
+        node.className = fresh.className;
+        node.classList.remove('new');
+      }
+      return;
+    }
+    if (think) {
+      var summary = think.querySelector('.think-summary');
+      var label = think.querySelector('.think-label');
+      if (summary) {
+        summary.textContent = summaryLine(message.reasoning, thinking);
+        summary.className = 'think-summary' + (thinking ? ' dots' : '');
+      }
+      if (label) {
+        label.textContent = thinking ? '思考中' : '已思考';
+        label.className = 'think-label' + (thinking ? ' dots' : '');
+      }
+      var body = think.querySelector('.think-text');
+      if (body) body.textContent = message.reasoning || '';
+    }
+    var answer = node.querySelector('.answer');
+    if (answer) {
+      if (message.generating) answer.textContent = message.text || '';
+      else answer.innerHTML = md(message.text);
+    }
+    var toolsBox = node.querySelector('.tools');
+    if (toolsBox) toolsBox.innerHTML = toolsHtml(message.tools, message.id);
+    var err = node.querySelector('.err');
+    if (err) err.textContent = message.error || '';
+  }
+
+  // Reconcile instead of rebuilding: keep nodes, patch only what changed.
+  function reconcile(list) {
+    var seen = {};
+    var cursor = logEl.firstElementChild;
+    for (var i = 0; i < list.length; i++) {
+      var message = list[i];
+      seen[message.id] = true;
+      var node = state.nodes[message.id] || createTurn(message);
+      if (!node) continue;
+      if (cursor === node) {
+        cursor = cursor.nextElementSibling;
+      } else {
+        logEl.insertBefore(node, cursor);
+      }
+      if (node.__sig !== turnSignature(message)) updateTurn(node, message);
+    }
+    while (cursor) {
+      var next = cursor.nextElementSibling;
+      var id = cursor.getAttribute ? cursor.getAttribute('data-mid') : null;
+      // Anything without data-mid is a placeholder ("加载中…"/empty state) and
+      // must not survive a real render.
+      if (!id || !seen[id]) {
+        logEl.removeChild(cursor);
+        if (id) delete state.nodes[id];
+      }
+      cursor = next;
+    }
+  }
+
   function render(session) {
     var stick = state.pinned;
     if (!session) {
+      state.nodes = {};
       logEl.innerHTML = '<div class="empty">这个会话还没有消息。<br>在下面输入，就是对它说话。</div>';
+      state.emptyShown = true;
       syncStatus(false);
       return;
     }
-    var html = '';
+
+    var list = [];
     for (var i = 0; i < session.messages.length; i++) {
       var message = session.messages[i];
       if (message.role !== 'user' && message.role !== 'assistant') continue;
@@ -522,18 +639,38 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       if (message.generating && message.reasoning && !state.thinkStart[message.id]) {
         state.thinkStart[message.id] = Date.now();
       }
-      html += turnHtml(message);
+      list.push(message);
     }
-    logEl.innerHTML = html || '<div class="empty">空会话，直接输入即可。</div>';
+
+    if (!list.length) {
+      state.nodes = {};
+      logEl.innerHTML = '<div class="empty">空会话，直接输入即可。</div>';
+      state.emptyShown = true;
+    } else {
+      if (state.emptyShown) {
+        logEl.innerHTML = '';
+        state.emptyShown = false;
+      }
+      reconcile(list);
+    }
+
     syncStatus(Boolean(session.busy || session.generating));
     if (stick) scrollToBottom('auto');
     syncPinned();
   }
 
   // Patch one turn in place: full re-render at 6fps would fight scrolling.
+  // Write a node's text only when it actually differs: assigning textContent
+  // with the same string still swaps the text node and repaints.
+  function setText(el, value) {
+    if (!el) return;
+    var next = value == null ? '' : String(value);
+    if (el.textContent !== next) el.textContent = next;
+  }
+
   function applyProgress(event) {
     if (event.sessionId !== state.sessionId) return;
-    var node = logEl.querySelector('.turn[data-mid="' + event.messageId + '"]');
+    var node = state.nodes[event.messageId] || logEl.querySelector('.turn[data-mid="' + event.messageId + '"]');
     if (!node) { tick(); return; }
     var stick = state.pinned;
     if (!state.thinkStart[event.messageId] && event.reasoning && event.generating) {
@@ -549,31 +686,42 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
       var label = thinkNode.querySelector('.think-label');
       var time = thinkNode.querySelector('.think-time');
       if (summary) {
-        summary.textContent = summaryLine(event.reasoning, thinking);
-        summary.className = 'think-summary' + (thinking ? ' dots' : '');
+        setText(summary, summaryLine(event.reasoning, thinking));
+        var summaryClass = 'think-summary' + (thinking ? ' dots' : '');
+        if (summary.className !== summaryClass) summary.className = summaryClass;
       }
       if (label) {
-        label.textContent = thinking ? '思考中' : '已思考';
-        label.className = 'think-label' + (thinking ? ' dots' : '');
+        setText(label, thinking ? '思考中' : '已思考');
+        var labelClass = 'think-label' + (thinking ? ' dots' : '');
+        if (label.className !== labelClass) label.className = labelClass;
       }
       if (time) {
         var start = state.thinkStart[event.messageId];
         var end = state.thinkEnd[event.messageId];
-        if (start && thinking) time.textContent = fmtDuration(Date.now() - start);
-        else if (start && end) time.textContent = fmtDuration(end - start);
-        else time.textContent = '';
+        if (start && thinking) setText(time, fmtDuration(Date.now() - start));
+        else if (start && end) setText(time, fmtDuration(end - start));
+        else setText(time, '');
       }
       var body = thinkNode.querySelector('.think-text');
-      if (body) body.textContent = event.reasoning || '';
+      if (body && thinkNode.classList.contains('open')) setText(body, event.reasoning || '');
     }
     var answer = node.querySelector('.answer');
     if (answer) {
-      if (event.generating) answer.textContent = event.text || '';
-      else answer.innerHTML = md(event.text);
+      if (event.generating) {
+        setText(answer, event.text || '');
+      } else if (node.__mdFor !== event.text) {
+        node.__mdFor = event.text;
+        answer.innerHTML = md(event.text);
+      }
     }
     var tools = node.querySelector('.tools');
-    if (tools) tools.innerHTML = toolsHtml(event.tools, event.messageId);
-    state.busy = Boolean(event.generating);
+    if (tools) {
+      var toolsHtmlNext = toolsHtml(event.tools, event.messageId);
+      if (node.__toolsHtml !== toolsHtmlNext) {
+        node.__toolsHtml = toolsHtmlNext;
+        tools.innerHTML = toolsHtmlNext;
+      }
+    }
     syncStatus(Boolean(event.generating));
     if (stick) scrollToBottom('auto');
     syncPinned();
@@ -694,6 +842,8 @@ export const REMOTE_CLIENT_HTML = `<!doctype html>
     state.expanded = {};
     state.thinkStart = {};
     state.thinkEnd = {};
+    state.nodes = {};
+    state.emptyShown = false;
     state.inflight = false;
     if (state.timer) clearTimeout(state.timer);
     logEl.innerHTML = '<div class="empty">加载中…</div>';
