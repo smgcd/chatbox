@@ -223,6 +223,11 @@ export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
   // fall back to it when this newer field is missing or stripped during sync.
   commandApprovalMode: z.enum(COMMAND_APPROVAL_MODES).optional().catch(undefined),
   agentMode: AgentModeEntrySchema.optional().catch(undefined),
+  // MCP servers this chat keeps out of the model's tool list even while they stay
+  // enabled globally (Settings → MCP). Undefined/empty follows the global enable
+  // list, so servers added later are available here by default. Only the tool
+  // injection is scoped — the server processes keep running for other chats.
+  disabledMcpServers: z.array(z.string()).optional().catch(undefined),
   // Frozen session prompt-context inputs (Soul + memories + workspace AGENTS.md),
   // captured on the session's first agent-mode generation so the system prompt
   // prefix stays byte-stable for provider prompt caches. Cleared on new thread.

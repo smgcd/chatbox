@@ -428,9 +428,15 @@ export const mcpController = {
     }
   },
 
-  getAvailableTools(): ToolSet {
+  /**
+   * Tools of every running server, minus the ones a chat muted. Tool names are
+   * prefixed with the server name (`mcp__<server>__<tool>`), so filtering has to
+   * happen here where the config still carries the server id.
+   */
+  getAvailableTools(disabledServerIds: readonly string[] = []): ToolSet {
     const toolSet: ToolSet = {}
     for (const { instance, config } of this.servers.values()) {
+      if (disabledServerIds.includes(config.id)) continue
       const mcpTools = instance.getAvailableTools()
       for (const [toolName, tool] of Object.entries(mcpTools)) {
         const rawExecute = tool.execute?.bind(tool)

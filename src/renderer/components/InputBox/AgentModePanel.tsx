@@ -53,10 +53,9 @@ import {
 import { rendererApplication } from '@/app/renderer-application'
 import { AppTooltip as Tooltip } from '@/components/ui/tooltip'
 import { useKnowledgeBases } from '@/hooks/knowledge-base'
-import { useMCPServerStatus, useToggleMCPServer } from '@/hooks/mcp'
+import { useMCPServerStatus } from '@/hooks/mcp'
 import { useCopilotMemory, useMyCopilots } from '@/hooks/useCopilots'
 import { navigateToSettings } from '@/modals/settings-navigation'
-import { BUILTIN_MCP_SERVERS } from '@/packages/mcp/builtin'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
 import { getWebSearchConfigurationIssue } from '@/packages/web-search/configuration-issue'
 import { WEB_SEARCH_PROVIDERS, type WebSearchProviderValue } from '@/packages/web-search/constants'
@@ -64,7 +63,7 @@ import platform from '@/platform'
 import { listCopilotMemories, listMemories } from '@/stores/agentPersonaStore'
 import { useAutoValidate } from '@/stores/premiumActions'
 import { setSessionAgentMode, useSessionAgentMode } from '@/stores/session/agent-mode'
-import { useMcpSettings, useSettingsStore } from '@/stores/settingsStore'
+import { useSettingsStore } from '@/stores/settingsStore'
 import * as toastActions from '@/stores/toastActions'
 import { useUIStore } from '@/stores/uiStore'
 import { featureFlags } from '@/utils/feature-flags'
@@ -79,6 +78,7 @@ import {
   useCommandApprovalModeState,
   useWorkingDirectoriesState,
 } from './useAgentModeSettingsState'
+import { useSessionMcpState } from './useSessionMcpState'
 
 const useSession = (sessionId: string | null) => rendererApplication.sessionHooks.useSession(sessionId)
 
@@ -143,28 +143,43 @@ const MCPServerItem: FC<{
   id: string
   name: string
   enabled: boolean
+  globallyEnabled: boolean
   disabled?: boolean
   onEnabledChange: (id: string, enabled: boolean) => void
-}> = ({ id, name, enabled, disabled = false, onEnabledChange }) => {
+}> = ({ id, name, enabled, globallyEnabled, disabled = false, onEnabledChange }) => {
   const status = useMCPServerStatus(id)
+  const { t } = useTranslation()
   return (
     <Flex
       justify="space-between"
       align="center"
+      gap="xs"
       px="sm"
       py={6}
       className={`rounded ${
-        disabled ? 'opacity-50' : 'hover:bg-[var(--mantine-color-gray-0)] dark:hover:bg-[var(--mantine-color-dark-5)]'
+        disabled || !globallyEnabled
+          ? 'opacity-50'
+          : 'hover:bg-[var(--mantine-color-gray-0)] dark:hover:bg-[var(--mantine-color-dark-5)]'
       }`}
     >
-      <Flex gap="xs" align="center">
+      <Flex gap="xs" align="center" className="min-w-0">
         <MCPStatus status={status} />
-        <Text size="sm">{name}</Text>
+        <Stack gap={0} className="min-w-0">
+          <Text size="sm" truncate>
+            {name}
+          </Text>
+          {!globallyEnabled && (
+            <Text size="xs" c="dimmed" className="leading-snug">
+              {t('Off in Settings')}
+            </Text>
+          )}
+        </Stack>
       </Flex>
       <Switch
-        checked={enabled}
+        checked={enabled && globallyEnabled}
         size="xs"
-        disabled={disabled || status?.state === 'starting' || status?.state === 'stopping'}
+        aria-label={name}
+        disabled={disabled || !globallyEnabled || status?.state === 'starting' || status?.state === 'stopping'}
         onChange={(e) => onEnabledChange(id, e.currentTarget.checked)}
       />
     </Flex>
@@ -331,11 +346,14 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
     [bochaApiKey, licenseKey, queritApiKey, searxngBaseUrl, tavilyApiKey]
   )
 
-  // MCP state
-  const mcp = useMcpSettings()
+  // MCP state: the global switches (Settings → MCP) decide whether a server runs;
+  // the toggles below only mute a server for the current chat.
   const isPremium = useAutoValidate()
-  const onMCPEnabledChange = useToggleMCPServer()
-  const enabledMCPCount = mcp.servers.filter((s) => s.enabled).length + mcp.enabledBuiltinServers.length
+  const {
+    servers: sessionMcpServers,
+    enabledCount: enabledMCPCount,
+    setSessionServerEnabled: onSessionMCPEnabledChange,
+  } = useSessionMcpState(sessionId, { includeBuiltin: isPremium })
 
   // Knowledge Base state
   const { data: knowledgeBases } = useKnowledgeBases(featureFlags.knowledgeBase)
@@ -1045,36 +1063,39 @@ const AgentModePanel = forwardRef<AgentModePanelHandle, AgentModePanelProps>(fun
     }
 
     if (page === 'mcp') {
+      const builtinServers = sessionMcpServers.filter((server) => server.builtin)
+      const customServers = sessionMcpServers.filter((server) => !server.builtin)
       return (
         <>
           <SubPanelHeader title="MCP" settingsPath="/mcp" disabled={workModeCapabilitiesDisabled} />
+          <Text size="xs" c="dimmed" px="sm" pb={2} className="leading-snug">
+            {t('Applies to this chat only. Servers are started in Settings → MCP.')}
+          </Text>
           <Divider my={4} />
-          {isPremium && (
-            <>
-              {BUILTIN_MCP_SERVERS.map((server) => (
-                <MCPServerItem
-                  key={server.id}
-                  id={server.id}
-                  name={server.name}
-                  enabled={mcp.enabledBuiltinServers.includes(server.id)}
-                  disabled={workModeCapabilitiesDisabled}
-                  onEnabledChange={onMCPEnabledChange}
-                />
-              ))}
-              {mcp.servers.length > 0 && <Divider my={4} />}
-            </>
-          )}
-          {mcp.servers.map((server) => (
+          {builtinServers.map((server) => (
             <MCPServerItem
               key={server.id}
               id={server.id}
               name={server.name}
-              enabled={server.enabled}
+              enabled={server.enabledInSession}
+              globallyEnabled={server.globallyEnabled}
               disabled={workModeCapabilitiesDisabled}
-              onEnabledChange={onMCPEnabledChange}
+              onEnabledChange={onSessionMCPEnabledChange}
             />
           ))}
-          {!mcp.servers.length && !mcp.enabledBuiltinServers.length && (
+          {builtinServers.length > 0 && customServers.length > 0 && <Divider my={4} />}
+          {customServers.map((server) => (
+            <MCPServerItem
+              key={server.id}
+              id={server.id}
+              name={server.name}
+              enabled={server.enabledInSession}
+              globallyEnabled={server.globallyEnabled}
+              disabled={workModeCapabilitiesDisabled}
+              onEnabledChange={onSessionMCPEnabledChange}
+            />
+          ))}
+          {!builtinServers.length && !customServers.length && (
             <Group justify="center" py="md">
               <Button
                 size="xs"

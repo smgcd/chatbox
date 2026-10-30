@@ -67,6 +67,9 @@ export const uiStore = createStore(
           workingDirectories?: string[]
           agentFullAccess?: boolean
           commandApprovalMode?: CommandApprovalMode
+          // MCP servers muted for a chat that is still "new"; baked into the
+          // created session's settings on first submit (see routes/index.tsx).
+          disabledMcpServers?: string[]
         },
         // Last explicit command-approval / working-directory choices (from any chat).
         // New chats start from these so users don't re-configure every conversation.

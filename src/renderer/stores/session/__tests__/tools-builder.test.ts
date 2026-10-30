@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 const {
   discoverSkillsMock,
   installFromSandboxMock,
+  getAvailableToolsMock,
   loadSkillMock,
   settingsState,
   getSettingsMock,
@@ -22,6 +23,7 @@ const {
 } = vi.hoisted(() => ({
   discoverSkillsMock: vi.fn(),
   installFromSandboxMock: vi.fn(),
+  getAvailableToolsMock: vi.fn(() => ({ mcp_tool: { execute: async () => ({}) } })),
   loadSkillMock: vi.fn(),
   settingsState: {
     licenseKey: undefined as string | undefined,
@@ -77,9 +79,7 @@ vi.mock('@/analytics/agent-mode', () => ({
 
 vi.mock('@/packages/mcp/controller', () => ({
   mcpController: {
-    getAvailableTools: () => ({
-      mcp_tool: { execute: async () => ({}) },
-    }),
+    getAvailableTools: getAvailableToolsMock,
   },
 }))
 
@@ -406,6 +406,34 @@ describe('buildToolsForSession', () => {
     expect(result.instructions).toContain('## Git')
     expect(result.instructions).toContain('prefix its name with `chatbox/`')
     expect(result.instructions).toContain('Co-authored-by: Chatbox <chatbox@chatboxai.com>')
+  })
+
+  test('a chat can mute individual MCP servers without losing the rest of Work Mode', async () => {
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      sessionSettings: { disabledMcpServers: ['scrapling'] },
+      codeExecution: {
+        sessionId: 'session-1',
+        provider: createMockSandboxProvider(),
+        files: [],
+      },
+    })
+
+    expect(getAvailableToolsMock).toHaveBeenCalledWith(['scrapling'])
+    expect(result.tools.load_skill).toBeDefined()
+    expect(result.tools.code_execution).toBeDefined()
+  })
+
+  test('without a session opt-out the MCP tool list follows the global switches', async () => {
+    await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+    })
+
+    expect(getAvailableToolsMock).toHaveBeenCalledWith([])
   })
 
   test('v2 command contract exposes run_command and retires legacy command tools', async () => {

@@ -307,6 +307,10 @@ function Index() {
           // Working directories bound while the chat was still "new" (not yet persisted),
           // falling back to the remembered default from earlier chats.
           ...(effectiveWorkingDirectories?.length ? { workingDirectories: effectiveWorkingDirectories } : {}),
+          // MCP servers muted while the chat was still "new" (not yet persisted).
+          ...(newSessionState.disabledMcpServers?.length
+            ? { disabledMcpServers: newSessionState.disabledMcpServers }
+            : {}),
           ...(effectiveApprovalMode
             ? {
                 commandApprovalMode: effectiveApprovalMode,
@@ -337,7 +341,8 @@ function Index() {
         newSessionState.knowledgeBase ||
         newSessionState.workingDirectories?.length ||
         newSessionState.agentFullAccess ||
-        newSessionState.commandApprovalMode
+        newSessionState.commandApprovalMode ||
+        newSessionState.disabledMcpServers?.length
       ) {
         setNewSessionState({})
       }
@@ -367,6 +372,7 @@ function Index() {
       newSessionState.workingDirectories,
       newSessionState.agentFullAccess,
       newSessionState.commandApprovalMode,
+      newSessionState.disabledMcpServers,
       newSessionCommandApprovalModeDefault,
       newSessionWorkingDirectoriesDefault,
       setNewSessionState,

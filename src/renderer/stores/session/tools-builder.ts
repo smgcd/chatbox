@@ -438,9 +438,11 @@ When you create a Git commit that includes code changes, append this exact trail
 
   let tools: ToolSet = {}
 
-  // MCP tools: agent mode only, requires model support
+  // MCP tools: agent mode only, requires model support. Servers muted for this
+  // chat are filtered out here, so a session can keep Work Mode (code execution,
+  // skills, files) while withholding individual MCP tool sets.
   if (includeAgentTools) {
-    tools = { ...mcpController.getAvailableTools() }
+    tools = { ...mcpController.getAvailableTools(options.sessionSettings?.disabledMcpServers ?? []) }
   }
 
   // Web search: works independently of agent mode

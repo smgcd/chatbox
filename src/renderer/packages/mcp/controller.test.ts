@@ -892,3 +892,72 @@ describe('MCPServer stdio transport', () => {
     }
   })
 })
+
+describe('session-scoped MCP tool filtering', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('omits the tools of servers a chat muted, keeping the rest', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const request = recordRequest(input, init)
+        if (request.method === 'GET') {
+          return new Response(null, { status: 405, statusText: 'Method Not Allowed' })
+        }
+        const body = request.body
+        if (body?.method === 'initialize') {
+          return Response.json(
+            {
+              jsonrpc: '2.0',
+              id: body.id,
+              result: {
+                protocolVersion: '2025-11-25',
+                capabilities: { tools: {} },
+                serverInfo: { name: 'scoped', version: '1.0.0' },
+              },
+            },
+            { headers: { 'mcp-session-id': 'scoped-session' } }
+          )
+        }
+        if (body?.method === 'notifications/initialized') {
+          return new Response(null, { status: 202 })
+        }
+        if (body?.method === 'tools/list') {
+          return Response.json({
+            jsonrpc: '2.0',
+            id: body.id,
+            result: {
+              tools: [
+                {
+                  name: 'echo',
+                  description: 'Echo the input text',
+                  inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+                },
+              ],
+            },
+          })
+        }
+        return new Response(null, { status: 500 })
+      })
+    )
+
+    const id = 'session-scope-server'
+    await mcpController.startServer({
+      id,
+      name: 'Scoped',
+      enabled: true,
+      transport: { type: 'http', url: 'https://scoped.example.com/mcp' },
+    })
+
+    try {
+      expect(Object.keys(mcpController.getAvailableTools())).toEqual(['mcp__scoped__echo'])
+      expect(Object.keys(mcpController.getAvailableTools(['another-server']))).toEqual(['mcp__scoped__echo'])
+      expect(mcpController.getAvailableTools([id])).toEqual({})
+    } finally {
+      await mcpController.stopServer(id)
+    }
+  })
+})
