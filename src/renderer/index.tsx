@@ -5,9 +5,15 @@ import '@mantine/spotlight/styles.css'
 import { RouterProvider } from '@tanstack/react-router'
 import { useAtomValue } from 'jotai'
 import 'photoswipe/dist/photoswipe.css'
-import { StrictMode, useState } from 'react'
+import { lazy, StrictMode, Suspense, useState } from 'react'
 import ReactDOM from 'react-dom/client'
-import { bootstrapRenderer, initializeRenderer, rendererApplication, reportRendererInitializationError } from './app'
+import {
+  bootstrapRenderer,
+  initializeRenderer,
+  rendererApplication,
+  reportRendererInitializationError,
+  runRendererStartup,
+} from './app'
 import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { sessionStartupRecovery } from './packages/session-startup-recovery'
 import platform from './platform'
@@ -19,7 +25,10 @@ import './static/index.css'
 import './static/liquid-glass.css'
 import { initLiquidGlass } from './static/liquid-glass'
 import { initLogAtom, migrationProcessAtom } from './stores/atoms/utilAtoms'
-import { CHATBOX_BUILD_PLATFORM, CHATBOX_BUILD_TARGET } from './variables'
+import { captureRendererDevLaunchOptions } from './utils/dev-launch'
+import { CHATBOX_BUILD_TARGET } from './variables'
+
+const MobileExecutionHost = lazy(() => import('./packages/mobile-work-mode/MobileExecutionHost'))
 
 // 按需加载 polyfill
 import './setup/load_polyfill'
@@ -35,14 +44,15 @@ import './setup/protect'
 // }
 
 // Token estimation system initialization (runs in all environments)
-void import('./setup/token_estimation_init')
 
 // Liquid Glass 边缘折射：给玻璃容器叠 SVG feDisplacementMap 折射
 initLiquidGlass()
 
 // 引入移动端安全区域代码，主要为了解决异形屏幕的问题
-if (CHATBOX_BUILD_TARGET === 'mobile_app' && CHATBOX_BUILD_PLATFORM === 'ios') {
+
+if (CHATBOX_BUILD_TARGET === 'mobile_app') {
   void import('./setup/mobile_safe_area')
+
 }
 
 // ==========渲染节点==============
@@ -95,13 +105,13 @@ const tid = setTimeout(() => {
   }
 }, 1000)
 
+captureRendererDevLaunchOptions()
+
 // 等待初始化完成后再渲染
-initializeRenderer()
-  .catch((error) => {
-    // 初始化中的各个步骤已经捕获了错误，这里防止未来添加未捕获的逻辑
-    reportRendererInitializationError(error)
-  })
-  .finally(async () => {
+void runRendererStartup({
+  initialize: initializeRenderer,
+  reportInitializationError: reportRendererInitializationError,
+  bootstrap: async () => {
     clearTimeout(tid)
 
     sessionStartupRecovery.promotePreviousAttempt()
@@ -114,24 +124,16 @@ initializeRenderer()
       <StrictMode>
         <ErrorBoundary>
           <ChatboxProvider application={rendererApplication}>
+            {platform.type === 'mobile' ? (
+              <Suspense fallback={null}>
+                <MobileExecutionHost />
+              </Suspense>
+            ) : null}
             <RouterProvider router={router} />
           </ChatboxProvider>
         </ErrorBoundary>
       </StrictMode>
     )
-
-    if (platform.type === 'mobile') {
-      void SplashScreen.hide()
-    }
-    const el = document.querySelector('.splash-screen')
-    if (el) {
-      const removeSplashScreen = () => el.remove()
-      el.addEventListener('animationend', removeSplashScreen, { once: true })
-      el.classList.add('splash-screen-fade-out')
-      // Some embedded WebEngines apply the class but never dispatch animationend.
-      // Never leave the initialized application permanently covered by the splash screen.
-      setTimeout(removeSplashScreen, 600)
-    }
 
     if (window?.navigator?.storage) {
       navigator.storage?.persisted().then((persisted) => {
@@ -140,7 +142,41 @@ initializeRenderer()
         }
       })
     }
-  })
+  },
+  showStartupError: (error) => {
+    // Keep startup failures visible instead of leaving the static splash screen
+    // covering the page forever.
+    const root = document.getElementById('root')
+    if (root) {
+      root.innerHTML = '<div class="startup-error">Chatbox could not start. Please reload the page.</div>'
+    }
+    console.error('Failed to bootstrap Chatbox:', error)
+  },
+  finalize: () => {
+    clearTimeout(tid)
+
+    if (platform.type === 'mobile') {
+      void SplashScreen.hide()
+    }
+    const el = document.querySelector('.splash-screen')
+    if (el) {
+      let splashScreenFinalized = false
+      const removeSplashScreen = () => {
+        if (splashScreenFinalized) {
+          return
+        }
+        splashScreenFinalized = true
+        el.remove()
+      }
+      el.addEventListener('animationend', removeSplashScreen, { once: true })
+      el.classList.add('splash-screen-fade-out')
+      // Some embedded WebEngines apply the class but never dispatch animationend.
+      // Never leave the initialized application permanently covered by the splash screen.
+      setTimeout(removeSplashScreen, 600)
+    } else {
+    }
+  },
+})
 
 // If you want to start measuring performance in your app, pass a function
 // to log results (for example: reportWebVitals(console.log))

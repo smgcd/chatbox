@@ -64,6 +64,18 @@ interface UserExecRunnerOptions {
 
 const DEFAULT_COMPLETED_TTL_MS = 10 * 60 * 1000
 const DEFAULT_MAX_COMPLETED_ENTRIES = 32
+/**
+ * Drain window after the wrapper shell exits, before the tool call is settled with the
+ * output captured so far. Node emits `close` only once every stdio stream has ended, so a
+ * process that inherited the tool's pipes (proxy core, dev server, watcher) keeps a call
+ * running long after the command itself finished. `exit` is the reliable signal.
+ */
+const EXIT_DRAIN_GRACE_MS = 1_000
+/**
+ * Hard backstop after a kill was requested: if the wrapper never reports `exit` (for example
+ * `taskkill /T` could not reach it), the tool call still settles instead of hanging forever.
+ */
+const FORCE_SETTLE_MS = 5_000
 const activeUserExecCommands = new Map<string, ActiveUserExecCommand>()
 
 function getUserExecKey(sessionId: string | undefined, toolCallId: string | undefined): string | null {
@@ -172,16 +184,31 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
       let cancelled = false
       let timedOut = false
       let outputLimitExceeded = false
+      let stdoutBackpressured = false
+      let stderrBackpressured = false
       let forceKillHandle: ReturnType<typeof setTimeout> | undefined
-      let drainHandle: ReturnType<typeof setTimeout> | undefined
-      let lastExit: { code: number | null; signal: NodeJS.Signals | null } | null = null
-      const TERMINAL_DRAIN_GRACE_MS = 2_000
+      let wrapperExit: { code: number | null; signal: NodeJS.Signals | null } | undefined
+      const settleHandles = new Set<ReturnType<typeof setTimeout>>()
       const activeKey = getUserExecKey(sessionId, toolCallId)
+
+      const scheduleSettle = (callback: () => void, delayMs: number) => {
+        const handle = setTimeout(() => {
+          settleHandles.delete(handle)
+          callback()
+        }, delayMs)
+        settleHandles.add(handle)
+      }
+
+      const clearSettleTimers = () => {
+        for (const handle of settleHandles) clearTimeout(handle)
+        settleHandles.clear()
+      }
 
       const resolveOnce = (result: UserExecResult) => {
         if (settled) return
         settled = true
         clearTimeout(timeoutHandle)
+        clearSettleTimers()
         if (activeKey) activeUserExecCommands.delete(activeKey)
         void (async () => {
           const outputFile = await outputCapture.finish()
@@ -214,40 +241,6 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
         })()
       }
 
-      // Shared result builder for every terminal path (close / exit-drain /
-      // cancel / timeout).
-      const buildResult = (code: number | null, signal: NodeJS.Signals | null): UserExecResult =>
-        cancelled
-          ? { success: false, stdout, stderr, exitCode: 130, cancelled: true }
-          : outputLimitExceeded
-            ? {
-                success: false,
-                stdout,
-                stderr: `${stderr}${stderr ? '\n' : ''}[Command terminated: output exceeded the 10MB capture limit]`,
-                exitCode: 1,
-              }
-            : timedOut || signal === 'SIGTERM'
-              ? { success: false, stdout, stderr: stderr || `Command timed out (${timeoutMs / 1000}s)`, exitCode: null }
-              : { success: code === 0, stdout, stderr, exitCode: code }
-
-      // `close` fires only after every stdio stream is closed. A daemon-style
-      // grandchild that inherited our pipes keeps them open forever, so the
-      // shell exits but `close` never arrives and the tool call would hang the
-      // session lock indefinitely (issue #3958). Once the shell itself exits,
-      // give stdio a bounded drain grace — re-armed while output still flows —
-      // and then settle on the shell's exit code regardless.
-      const armDrain = () => {
-        const exitInfo = lastExit
-        if (!exitInfo) return
-        if (drainHandle) clearTimeout(drainHandle)
-        drainHandle = setTimeout(() => {
-          if (settled) return
-          killProcessTree(child, 'SIGTERM')
-          resolveOnce(buildResult(exitInfo.code, exitInfo.signal))
-        }, TERMINAL_DRAIN_GRACE_MS)
-        drainHandle.unref?.()
-      }
-
       const child = spawn(shellCommand, shellArgs, {
         cwd,
         stdio: [isWindows ? 'pipe' : 'ignore', 'pipe', 'pipe'],
@@ -258,17 +251,49 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
         detached: !isWindows,
       })
 
+      // Release our ends of the stdio pipes. A background process started by the command can
+      // still hold the inherited write ends; closing them here bounds the main-process handles
+      // instead of leaking a pipe pair per leaking command.
+      const disposeStdio = () => {
+        child.stdout?.destroy()
+        child.stderr?.destroy()
+        child.stdin?.destroy()
+      }
+
+      const terminateProcessTree = (signal: 'SIGTERM' | 'SIGKILL') => {
+        killProcessTree(child, signal)
+        if (forceKillHandle) clearTimeout(forceKillHandle)
+        forceKillHandle = scheduleKillBackstop()
+        // `taskkill /T` is a silent no-op once the wrapper has exited, so never let the call
+        // depend on the kill actually landing on a live process tree.
+        scheduleSettle(() => {
+          disposeStdio()
+          killProcessTree(child, 'SIGKILL')
+          resolveFromTermination(null, 'SIGKILL')
+        }, FORCE_SETTLE_MS)
+      }
+
+      const scheduleKillBackstop = () => {
+        const handle = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
+        settleHandles.add(handle)
+        return handle
+      }
+
       if (activeKey) {
         activeUserExecCommands.set(activeKey, {
           cancel: () => {
             if (settled || cancelled) return
             cancelled = true
             clearTimeout(timeoutHandle)
-            killProcessTree(child, 'SIGTERM')
-            forceKillHandle = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
-            // Settle immediately so Stop is terminal even when a leaked
-            // descendant still holds our stdio pipes open (issue #3958).
-            resolveOnce({ success: false, stdout, stderr, exitCode: 130, cancelled: true })
+            terminateProcessTree('SIGTERM')
+            // The wrapper may already be gone while a process that inherited the tool's pipes
+            // keeps this call open. Nothing is left to wait for, so settle immediately and make
+            // Stop responsive instead of waiting out the drain grace.
+            if (wrapperExit) {
+              killProcessTree(child, 'SIGKILL')
+              disposeStdio()
+              resolveFromTermination(wrapperExit.code, wrapperExit.signal)
+            }
           },
         })
       }
@@ -276,12 +301,7 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
       const timeoutHandle = setTimeout(() => {
         if (settled || child.killed) return
         timedOut = true
-        killProcessTree(child, 'SIGTERM')
-        forceKillHandle = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
-        // The shell may already be gone (only a leaked descendant holds the
-        // pipes); arm the drain so the call still settles instead of hanging.
-        if (!lastExit) lastExit = { code: null, signal: 'SIGTERM' }
-        armDrain()
+        terminateProcessTree('SIGTERM')
       }, timeoutMs)
 
       if (!child.stdout || !child.stderr) {
@@ -301,50 +321,85 @@ export async function executeUserExecCommand(params: UserExecParams): Promise<Us
 
       stdoutStream.on('data', (data: Buffer) => {
         stdoutBytes += data.byteLength
-        if (lastExit) armDrain()
         if (!outputCapture.append('stdout', data)) {
+          stdoutBackpressured = true
           stdoutStream.pause()
-          outputCapture.onDrain(() => stdoutStream.resume())
+          outputCapture.onDrain(() => {
+            stdoutBackpressured = false
+            stdoutStream.resume()
+          })
         }
         if (outputCapture.isLimitExceeded() && !outputLimitExceeded) {
           outputLimitExceeded = true
-          killProcessTree(child, 'SIGTERM')
-          forceKillHandle = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
+          terminateProcessTree('SIGTERM')
         }
         const remaining = maxOutputBytes - Buffer.byteLength(stdout)
         if (remaining > 0) stdout += data.subarray(0, remaining).toString()
       })
       stderrStream.on('data', (data: Buffer) => {
         stderrBytes += data.byteLength
-        if (lastExit) armDrain()
         if (!outputCapture.append('stderr', data)) {
+          stderrBackpressured = true
           stderrStream.pause()
-          outputCapture.onDrain(() => stderrStream.resume())
+          outputCapture.onDrain(() => {
+            stderrBackpressured = false
+            stderrStream.resume()
+          })
         }
         if (outputCapture.isLimitExceeded() && !outputLimitExceeded) {
           outputLimitExceeded = true
-          killProcessTree(child, 'SIGTERM')
-          forceKillHandle = setTimeout(() => killProcessTree(child, 'SIGKILL'), 3_000)
+          terminateProcessTree('SIGTERM')
         }
         const remaining = maxOutputBytes - Buffer.byteLength(stderr)
         if (remaining > 0) stderr += data.subarray(0, remaining).toString()
       })
+      const resolveFromTermination = (code: number | null, signal: NodeJS.Signals | null) => {
+        resolveOnce(
+          cancelled
+            ? { success: false, stdout, stderr, exitCode: 130, cancelled: true }
+            : outputLimitExceeded
+              ? {
+                  success: false,
+                  stdout,
+                  stderr: `${stderr}${stderr ? '\n' : ''}[Command terminated: output exceeded the 10MB capture limit]`,
+                  exitCode: 1,
+                }
+              : timedOut || signal === 'SIGTERM'
+                ? {
+                    success: false,
+                    stdout,
+                    stderr: stderr || `Command timed out (${timeoutMs / 1000}s)`,
+                    exitCode: null,
+                  }
+                : { success: code === 0, stdout, stderr, exitCode: code }
+        )
+      }
+
       child.on('error', (error) => {
         if (forceKillHandle) clearTimeout(forceKillHandle)
         log.error('skills:user-exec spawn error', error)
         resolveOnce({ success: false, stdout, stderr: stderr || error.message, exitCode: null })
       })
+      child.on('exit', (code, signal) => {
+        if (settled) return
+        wrapperExit = { code, signal }
+        // A paused reader can still contain foreground output waiting for capture-file I/O.
+        // Give it another drain window instead of treating backpressure as a leaked pipe.
+        const settleAfterDrain = () => {
+          if (!cancelled && !timedOut && !outputLimitExceeded && (stdoutBackpressured || stderrBackpressured)) {
+            scheduleSettle(settleAfterDrain, EXIT_DRAIN_GRACE_MS)
+            return
+          }
+          // Finish process-group cleanup before closing pipes and cancelling the kill backstop.
+          if (cancelled || timedOut || outputLimitExceeded) killProcessTree(child, 'SIGKILL')
+          disposeStdio()
+          resolveFromTermination(code, signal)
+        }
+        scheduleSettle(settleAfterDrain, EXIT_DRAIN_GRACE_MS)
+      })
       child.on('close', (code, signal) => {
         if (forceKillHandle) clearTimeout(forceKillHandle)
-        if (drainHandle) clearTimeout(drainHandle)
-        resolveOnce(buildResult(code, signal))
-      })
-      child.on('exit', (code, signal) => {
-        if (forceKillHandle) clearTimeout(forceKillHandle)
-        lastExit = { code, signal }
-        // 'close' may never arrive when a leaked child holds our pipes; arm a
-        // bounded drain so the tool call always settles once the shell exits.
-        armDrain()
+        resolveFromTermination(code, signal)
       })
     })
   } catch (error) {
