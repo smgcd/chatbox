@@ -142,6 +142,8 @@ describe('getMainRuntimePolicy', () => {
     expect(getMainRuntimePolicy({}, { isHarmonyBuild: false, isPackaged: true })).toEqual({
       createTray: true,
       isQa: false,
+      isServe: false,
+      skipTaskbar: false,
       qaTaskId: null,
       registerGlobalShortcuts: true,
       registerProtocolClient: true,
@@ -167,6 +169,8 @@ describe('getMainRuntimePolicy', () => {
     ).toEqual({
       createTray: false,
       isQa: true,
+      isServe: false,
+      skipTaskbar: false,
       qaTaskId: '20260811_real-task-01',
       registerGlobalShortcuts: false,
       registerProtocolClient: false,
