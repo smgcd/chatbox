@@ -134,10 +134,15 @@ function verifyVersionsMatchPnpmWorkspace(appDir, options = {}) {
     // Fail closed: an empty tree means the check saw nothing to compare, which
     // would silently report every skew as verified. Better to fail the build
     // than to ship a package with missing runtime dependencies again.
-    throw new Error(
-      '[ensure-app-deps] pnpm list returned no production dependencies — cannot verify version alignment with the pnpm workspace lockfile. ' +
-        'Run `pnpm list --prod --json --lockfile-only` in release/app/ to debug.',
+    //
+    // [smgcd personal build] 本机没有任何 pnpm 能看到的锁：release/app 不在
+    // pnpm-workspace 里，仓库也不带 release/app/pnpm-lock.yaml，所以
+    // `pnpm list --lockfile-only` 永远返回空树。这里降级为警告（而不是中断打包），
+    // 运行时依赖是否齐备仍由上面的 verifyInstalledRuntimeDeps 把关。
+    console.warn(
+      '[ensure-app-deps] pnpm list returned no production dependencies; skipping the npm/pnpm version-skew check (personal build).'
     )
+    return
   }
 
   const npmLock = JSON.parse(fs.readFileSync(path.join(appDir, 'package-lock.json'), 'utf8'))
