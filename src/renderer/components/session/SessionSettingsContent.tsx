@@ -14,16 +14,19 @@ import {
 } from '@mantine/core'
 import { TestId } from '@shared/automation/testids'
 import { ModelProviderEnum, type SessionHeader, type SessionSettings } from '@shared/types'
+import { getMessageText } from '@shared/utils/message'
 import { MAX_TOOL_CALLS_BEFORE_CONFIRMATION, shouldPauseOnToolCallLimit } from '@shared/utils/tool-call-limit-pause'
-import { IconArrowBackUp, IconTrash } from '@tabler/icons-react'
+import { IconArrowBackUp, IconSelector, IconTrash } from '@tabler/icons-react'
 import { isEqual, omit } from 'lodash'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { forwardRef, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { currentBlobStorage } from '@/adapters/CurrentBlobStorage'
+import { rendererApplication } from '@/app/renderer-application'
 import { AssistantAvatar } from '@/components/common/Avatar'
 import { ICON_STROKE_WIDTH } from '@/components/common/IconButton'
 import { ScalableIcon } from '@/components/common/ScalableIcon'
 import { handleImageInputAndSave, ImageInStorage } from '@/components/Image'
+import ModelSelectorV2 from '@/components/ModelSelectorV2'
 import {
   ContextLimitSelectRow,
   describeSamplingValue,
@@ -51,8 +54,6 @@ import {
 import { useSettingsStore } from '@/stores/settingsStore'
 import { add as addToast } from '@/stores/toastActions'
 import type { SessionEdit } from './session-edit'
-import { getMessageText } from '@shared/utils/message'
-import { rendererApplication } from '@/app/renderer-application'
 
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024
 const TEXT_COMMIT_DELAY_MS = 600
@@ -77,14 +78,14 @@ function useCommittedText(value: string, commit: (value: string) => void, allowE
   return { value: draft, onChange: setDraft, onBlur: flush }
 }
 
-function useModelLabel(settings: SessionSettings | undefined) {
+function useModelLabel(selection: { provider?: string; modelId?: string } | undefined) {
   const { providers } = useProviders()
   return useMemo(() => {
-    if (!settings?.modelId) return undefined
-    const provider = providers.find((item) => item.id === settings.provider)
-    const model = provider?.models?.find((item) => item.modelId === settings.modelId)
-    return model?.nickname || settings.modelId
-  }, [providers, settings?.provider, settings?.modelId])
+    if (!selection?.modelId) return undefined
+    const provider = providers.find((item) => item.id === selection.provider)
+    const model = provider?.models?.find((item) => item.modelId === selection.modelId)
+    return model?.nickname || selection.modelId
+  }, [providers, selection?.provider, selection?.modelId])
 }
 
 type SettingKey = keyof SessionSettings
@@ -410,6 +411,37 @@ export function SessionSettingsContent({
         </SettingsSection>
       )}
 
+      {isChat && (
+        <SettingsSection
+          title={t('Context compaction')}
+          footer={t(
+            'Only the summary is written by this model; compaction still starts at the context window of the chat model.'
+          )}
+        >
+          <SettingRow
+            label={t('Compaction model')}
+            description={t('Model that summarizes this chat when it is compacted.')}
+            status={
+              settings?.compactionModel ? (
+                <RestoreLink onRestore={() => setParam({ compactionModel: undefined })} />
+              ) : (
+                <Text fz={12} lh="18px" c="chatbox-tertiary">
+                  {t("Follows the fast model, then the naming model, then this chat's model")}
+                </Text>
+              )
+            }
+            controlLayout="block"
+            control={
+              <CompactionModelPicker
+                testId={TestId.settings.sessionCompactionModel}
+                value={settings?.compactionModel}
+                onChange={(value) => setParam({ compactionModel: value })}
+              />
+            }
+          />
+        </SettingsSection>
+      )}
+
       <SettingsSection title={t('Background')}>
         <SettingRow
           label={t('Background Image')}
@@ -504,6 +536,59 @@ export function SessionSettingsContent({
         </Flex>
       )}
     </div>
+  )
+}
+
+const CompactionModelTrigger = forwardRef<HTMLButtonElement, { label: ReactNode; testId?: string }>(
+  ({ label, testId, ...props }, ref) => (
+    <Flex
+      {...props}
+      ref={ref}
+      component="button"
+      type="button"
+      data-testid={testId}
+      px={12}
+      py={6}
+      align="center"
+      gap={8}
+      className="w-full min-w-0 border-solid border border-chatbox-border-primary rounded-lg bg-transparent cursor-pointer text-chatbox-secondary"
+    >
+      <Text span flex={1} className="text-left break-all min-w-0">
+        {label}
+      </Text>
+      <ScalableIcon icon={IconSelector} className="text-inherit shrink-0" />
+    </Flex>
+  )
+)
+CompactionModelTrigger.displayName = 'CompactionModelTrigger'
+
+/** Model that writes this chat's compaction summary; empty follows the inherited choice. */
+function CompactionModelPicker({
+  value,
+  onChange,
+  testId,
+}: {
+  value?: { provider: string; modelId: string }
+  onChange: (value?: { provider: string; modelId: string }) => void
+  testId?: string
+}) {
+  const { t } = useTranslation()
+  const modelLabel = useModelLabel(value)
+  return (
+    <ModelSelectorV2
+      position="bottom-start"
+      transitionProps={{ transition: 'fade-down', duration: 200 }}
+      keepMounted
+      width={320}
+      showAuto
+      autoText={t('Follow default') ?? ''}
+      modelFilter={(model) => !model.type || model.type === 'chat'}
+      selectedProviderId={value?.provider}
+      selectedModelId={value?.modelId}
+      onSelect={(provider, model) => onChange(provider && model ? { provider, modelId: model } : undefined)}
+    >
+      <CompactionModelTrigger label={modelLabel ?? t('Follow default')} testId={testId} />
+    </ModelSelectorV2>
   )
 }
 

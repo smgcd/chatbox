@@ -57,4 +57,21 @@ describe('generateSummaryWithStream', () => {
 
     expect(chatMock).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ sessionId: 'session-1' }))
   })
+
+  it('summarizes with the model the conversation picked for compaction', async () => {
+    const messages: Message[] = [{ id: 'u1', role: 'user', contentParts: [{ type: 'text', text: 'Conversation' }] }]
+
+    await generateSummaryWithStream({
+      sessionId: 's1',
+      messages,
+      language: 'en',
+      sessionSettings: {
+        provider: 'openai',
+        modelId: 'gpt-4o',
+        compactionModel: { provider: 'deepseek', modelId: 'deepseek-flash' },
+      },
+    })
+
+    expect(createModelMock).toHaveBeenCalledWith(expect.objectContaining({ provider: 'deepseek', modelId: 'deepseek-flash' }))
+  })
 })

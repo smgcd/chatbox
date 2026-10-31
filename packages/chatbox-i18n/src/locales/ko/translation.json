@@ -1977,5 +1977,11 @@
   "Conversations only (V1 JSON)": "대화만 (V1 JSON)",
   "Earlier messages could not be loaded": "이전 메시지를 불러오지 못했습니다",
   "Later messages could not be loaded": "이후 메시지를 불러오지 못했습니다",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1에는 대화 텍스트, 기록 및 분기가 포함됩니다. 첨부 파일과 설정은 포함되지 않습니다."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1에는 대화 텍스트, 기록 및 분기가 포함됩니다. 첨부 파일과 설정은 포함되지 않습니다.",
+  "Context compaction": "컨텍스트 압축",
+  "Compaction model": "압축 모델",
+  "Model that summarizes this chat when it is compacted.": "압축 시 이 채팅을 요약하는 모델.",
+  "Follows the fast model, then the naming model, then this chat's model": "빠른 모델, 그다음 세션 이름 지정 모델, 마지막으로 이 채팅의 모델을 따릅니다",
+  "Only the summary is written by this model; compaction still starts at the context window of the chat model.": "이 모델은 요약만 작성합니다. 압축은 여전히 채팅 모델의 컨텍스트 윈도우에서 시작됩니다.",
+  "Follow default": "기본값 따르기"
 }

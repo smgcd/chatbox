@@ -219,6 +219,11 @@ export const SessionSettingsSchema = GlobalSessionSettingsSchema.extend({
   // See resolveReasoningProviderOptions.
   providerOptionsByModel: z.record(z.string(), ProviderOptionsSchema).optional().catch(undefined),
   autoCompaction: z.boolean().optional().catch(undefined),
+  // Which model writes this conversation's compaction summary. Undefined follows the
+  // fast model, then the naming model, then the session model. It only picks the
+  // summarizer: the context window that decides *when* to compact still comes from
+  // the session model, so a small summarizer never changes the trigger point.
+  compactionModel: z.object({ provider: z.string(), modelId: z.string() }).optional().catch(undefined),
   // Whether generation pauses for user confirmation after a run of consecutive
   // tool calls. Undefined follows the global setting; true/false override it.
   pauseOnToolCallLimit: z.boolean().optional().catch(undefined),

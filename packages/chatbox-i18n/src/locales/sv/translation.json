@@ -1977,5 +1977,11 @@
   "Conversations only (V1 JSON)": "Endast konversationer (V1 JSON)",
   "Earlier messages could not be loaded": "Tidigare meddelanden kunde inte läsas in",
   "Later messages could not be loaded": "Senare meddelanden kunde inte läsas in",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 innehåller konversationstext, historik och förgreningar. Bilagor och inställningar ingår inte."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 innehåller konversationstext, historik och förgreningar. Bilagor och inställningar ingår inte.",
+  "Context compaction": "Kontextkomprimering",
+  "Compaction model": "Komprimeringsmodell",
+  "Model that summarizes this chat when it is compacted.": "Modellen som sammanfattar denna chatt när den komprimeras.",
+  "Follows the fast model, then the naming model, then this chat's model": "Följer den snabba modellen, sedan namngivningsmodellen och sedan denna chattens modell",
+  "Only the summary is written by this model; compaction still starts at the context window of the chat model.": "Endast sammanfattningen skrivs av denna modell; komprimeringen startar fortfarande vid chattmodellens kontextfönster.",
+  "Follow default": "Följ standard"
 }

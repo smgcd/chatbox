@@ -1977,5 +1977,11 @@
   "Conversations only (V1 JSON)": "Solo conversaciones (V1 JSON)",
   "Earlier messages could not be loaded": "No se pudieron cargar los mensajes anteriores",
   "Later messages could not be loaded": "No se pudieron cargar los mensajes posteriores",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 incluye el texto, el historial y las ramas de las conversaciones. No incluye archivos adjuntos ni configuración."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 incluye el texto, el historial y las ramas de las conversaciones. No incluye archivos adjuntos ni configuración.",
+  "Context compaction": "Compresión de contexto",
+  "Compaction model": "Modelo de compresión",
+  "Model that summarizes this chat when it is compacted.": "Modelo que resume este chat cuando se compacta.",
+  "Follows the fast model, then the naming model, then this chat's model": "Sigue el modelo rápido, luego el modelo de nombrado y, a continuación, el modelo de este chat",
+  "Only the summary is written by this model; compaction still starts at the context window of the chat model.": "Solo el resumen lo escribe este modelo; la compactación de contexto sigue comenzando en la ventana de contexto del modelo del chat.",
+  "Follow default": "Seguir el valor predeterminado"
 }

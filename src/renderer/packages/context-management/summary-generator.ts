@@ -66,6 +66,18 @@ export async function generateSummary(options: SummaryGeneratorOptions): Promise
 }
 
 function buildModelSettings(globalSettings: Settings, sessionSettings?: SessionSettings): SessionSettings & Settings {
+  // A model picked in the conversation settings wins: it is the only choice the user
+  // makes explicitly, so neither remote config nor the naming model may override it.
+  const compactionModel = sessionSettings?.compactionModel
+  if (compactionModel?.provider && compactionModel?.modelId) {
+    return {
+      ...globalSettings,
+      ...sessionSettings,
+      provider: compactionModel.provider as ModelProvider,
+      modelId: compactionModel.modelId,
+    }
+  }
+
   const remoteConfig = settingActions.getRemoteConfig()
 
   const fastModel = (remoteConfig as { fastModel?: { provider: string; model: string } })?.fastModel

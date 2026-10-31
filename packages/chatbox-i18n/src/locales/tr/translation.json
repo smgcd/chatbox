@@ -1977,5 +1977,11 @@
   "Conversations only (V1 JSON)": "Yalnızca konuşmalar (V1 JSON)",
   "Earlier messages could not be loaded": "Önceki mesajlar yüklenemedi",
   "Later messages could not be loaded": "Sonraki mesajlar yüklenemedi",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1, konuşma metnini, geçmişini ve dallarını içerir. Ekler ve yapılandırma dahil edilmez."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1, konuşma metnini, geçmişini ve dallarını içerir. Ekler ve yapılandırma dahil edilmez.",
+  "Context compaction": "Bağlam sıkıştırma",
+  "Compaction model": "Sıkıştırma modeli",
+  "Model that summarizes this chat when it is compacted.": "Sıkıştırıldığında bu sohbeti özetleyen model.",
+  "Follows the fast model, then the naming model, then this chat's model": "Önce hızlı modeli, sonra adlandırma modelini, ardından bu sohbetin modelini izler",
+  "Only the summary is written by this model; compaction still starts at the context window of the chat model.": "Bu model yalnızca özeti yazar; sıkıştırma yine sohbet modelinin bağlam penceresinde başlar.",
+  "Follow default": "Varsayılanı izle"
 }

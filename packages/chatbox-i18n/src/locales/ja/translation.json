@@ -1977,5 +1977,11 @@
   "Conversations only (V1 JSON)": "会話のみ（V1 JSON）",
   "Earlier messages could not be loaded": "以前のメッセージを読み込めませんでした",
   "Later messages could not be loaded": "以降のメッセージを読み込めませんでした",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 には会話のテキスト、履歴、分岐が含まれます。添付ファイルと設定は含まれません。"
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 には会話のテキスト、履歴、分岐が含まれます。添付ファイルと設定は含まれません。",
+  "Context compaction": "コンテキスト圧縮",
+  "Compaction model": "コンパクションモデル",
+  "Model that summarizes this chat when it is compacted.": "コンパクション時にこのチャットを要約するモデル。",
+  "Follows the fast model, then the naming model, then this chat's model": "高速モデル、次に命名モデル、最後にこのチャットのモデルに従います",
+  "Only the summary is written by this model; compaction still starts at the context window of the chat model.": "このモデルが書き込むのはサマリーのみです。コンパクションは引き続きチャットモデルのコンテキストウィンドウで開始されます。",
+  "Follow default": "デフォルトに従う"
 }

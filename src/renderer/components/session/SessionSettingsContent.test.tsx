@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { MantineProvider } from '@mantine/core'
-import { type SessionHeader } from '@shared/types'
+import type { SessionHeader } from '@shared/types'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { type ReactNode, useState } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -56,6 +56,23 @@ vi.mock('@/components/Image', () => ({ handleImageInputAndSave: vi.fn(), ImageIn
 vi.mock('@/components/ui/tooltip', () => ({ AppTooltip: ({ children }: { children: ReactNode }) => children }))
 vi.mock('@/adapters/CurrentBlobStorage', () => ({ currentBlobStorage: { set: vi.fn() } }))
 vi.mock('@/storage/StoreStorage', () => ({ StorageKeyGenerator: { picture: (key: string) => `picture:${key}` } }))
+vi.mock('@/components/ModelSelectorV2', () => ({
+  default: (props: {
+    children?: ReactNode
+    onSelect?: (provider: string, model: string) => void
+    selectedProviderId?: string
+    selectedModelId?: string
+  }) => (
+    <>
+      {props.children}
+      <button
+        type="button"
+        data-testid="model-selector-pick"
+        onClick={() => props.onSelect?.('deepseek', 'deepseek-flash')}
+      >{`${props.selectedProviderId ?? ''}:${props.selectedModelId ?? ''}`}</button>
+    </>
+  ),
+}))
 
 vi.mock('@/app/renderer-application', () => ({
   rendererApplication: {
@@ -136,6 +153,22 @@ describe('SessionSettingsContent', () => {
     expect(state.getAttribute('data-inherit-state')).toBe('overridden')
     fireEvent.click(state.querySelector('button') as HTMLButtonElement)
     expect(onEdit).toHaveBeenCalledWith({ settings: { temperature: undefined } })
+  })
+
+  test('picks the model that writes the compaction summary', () => {
+    const onEdit = renderContent(makeSession({}))
+    expect(screen.getByText("Follows the fast model, then the naming model, then this chat's model")).toBeTruthy()
+    fireEvent.click(screen.getByTestId('session-settings-compaction-model'))
+    fireEvent.click(screen.getByTestId('model-selector-pick'))
+    expect(onEdit).toHaveBeenLastCalledWith({
+      settings: { compactionModel: { provider: 'deepseek', modelId: 'deepseek-flash' } },
+    })
+  })
+
+  test('restores the compaction model to the inherited choice', () => {
+    const onEdit = renderContent(makeSession({ compactionModel: { provider: 'deepseek', modelId: 'deepseek-flash' } }))
+    fireEvent.click(screen.getByText('Restore'))
+    expect(onEdit).toHaveBeenCalledWith({ settings: { compactionModel: undefined } })
   })
 
   test('restores every overridden parameter at once', () => {

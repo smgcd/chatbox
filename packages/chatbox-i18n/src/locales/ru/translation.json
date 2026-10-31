@@ -1977,5 +1977,11 @@
   "Conversations only (V1 JSON)": "Только беседы (V1 JSON)",
   "Earlier messages could not be loaded": "Не удалось загрузить более ранние сообщения",
   "Later messages could not be loaded": "Не удалось загрузить более поздние сообщения",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 включает текст, историю и ветки бесед. Вложения и настройки не включаются."
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 включает текст, историю и ветки бесед. Вложения и настройки не включаются.",
+  "Context compaction": "Сжатие контекста",
+  "Compaction model": "Модель сжатия",
+  "Model that summarizes this chat when it is compacted.": "Модель, которая суммирует этот чат при его сжатии.",
+  "Follows the fast model, then the naming model, then this chat's model": "Следует за быстрой моделью, затем за моделью именования, а затем за моделью этого чата",
+  "Only the summary is written by this model; compaction still starts at the context window of the chat model.": "Только резюме записывается этой моделью; сжатие по-прежнему начинается с окна контекста чат-модели.",
+  "Follow default": "Следовать по умолчанию"
 }

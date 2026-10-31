@@ -1977,5 +1977,11 @@
   "Conversations only (V1 JSON)": "仅导出对话（V1 JSON）",
   "Earlier messages could not be loaded": "更早的消息未能加载",
   "Later messages could not be loaded": "后面的消息未能加载",
-  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 包含对话文本、历史线程和分支，不包含附件和配置。"
+  "V1 includes conversation text, history and branches. Attachments and configuration are not included.": "V1 包含对话文本、历史线程和分支，不包含附件和配置。",
+  "Context compaction": "上下文压缩",
+  "Compaction model": "压缩模型",
+  "Model that summarizes this chat when it is compacted.": "压缩时用来总结本对话的模型。",
+  "Follows the fast model, then the naming model, then this chat's model": "依次使用快速模型、会话命名模型，最后是本次对话的模型",
+  "Only the summary is written by this model; compaction still starts at the context window of the chat model.": "这个模型只负责写摘要；是否触发压缩仍按对话模型的上文窗口判断。",
+  "Follow default": "跟随默认"
 }

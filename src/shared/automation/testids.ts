@@ -252,6 +252,7 @@ export const TestId = {
     sessionMaxContext: 'session-settings-max-context',
     sessionMaxContextCustom: 'session-settings-max-context-custom',
     sessionClaudePromptCacheTTL: 'session-settings-claude-prompt-cache-ttl',
+    sessionCompactionModel: 'session-settings-compaction-model',
     sessionSave: 'session-settings-save',
     clearSessionListKeep: 'clear-session-list-keep-count',
     clearSessionListConfirm: 'clear-session-list-confirm',
