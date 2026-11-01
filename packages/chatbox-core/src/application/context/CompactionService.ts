@@ -7,7 +7,7 @@ import type { SessionHeaderRead } from '../../ports/session-row-repository'
 import type { SessionContextRepositoryPort, SessionContextSource } from '../../ports/session-context-source'
 import type { SessionCompactionOperation } from '../../ports/session-structure-command'
 import { getTokenizerType } from '@shared/token-estimation/tokenizer'
-import { type CompactionBudget, estimateTokensBySampling, shouldCompactAtTokens } from '../token-estimation/math'
+import { type CompactionBudget, estimateTokensBySampling, getDeferredTriggerTokens, shouldCompactAtTokens } from '../token-estimation/math'
 import type { TokenEstimationModel } from '../token-estimation/TokenEstimationService'
 import { createCompactionPlan } from './compaction-plan'
 import type {
@@ -111,6 +111,25 @@ export function isAutoCompactionEnabled(sessionSettings?: SessionSettings, globa
 /** Per-session request facts are kept for recently active sessions only. */
 const SESSION_FACT_LIMIT = 256
 
+/**
+ * Whether the previous turn is still mid-subtask: its tool calls have no result yet.
+ *
+ * Structural signal, not a guess about content: a model that produced tool calls and got no
+ * results back has not finished the subtask, it is waiting for them. Compacting there replaces
+ * the working state it needs with a summary of it.
+ */
+function subtaskInProgress(source: SessionContextSource): boolean {
+  const messages = Array.isArray(source.candidateMessages) ? source.candidateMessages : []
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || message.role === 'system') continue
+    if (message.isSummary) return false
+    if (message.role !== 'assistant') return false
+    return Array.isArray(message.contentParts) && message.contentParts.some((part) => part.type === 'tool-call')
+  }
+  return false
+}
+
 const NO_REQUEST_OVERHEAD: RequestOverheadTokens = { toolTokens: 0, extraSystemTokens: 0 }
 
 /** The context a compaction left: valid only while the active path still ends past that summary. */
@@ -156,15 +175,24 @@ export class CompactionService {
   }
 
   async needsCompaction(sessionId: string, pendingMessage?: Message): Promise<boolean> {
+    const evaluation = await this.evaluate(sessionId, pendingMessage)
+    return evaluation?.should ?? false
+  }
+
+  /** Measured pressure plus the plain-threshold decision; null when there is nothing to measure. */
+  private async evaluate(
+    sessionId: string,
+    pendingMessage?: Message
+  ): Promise<{ pressure: CompactionPressure; should: boolean } | null> {
     const read = await this.options.sessions.getSessionHeader(sessionId)
     const session = read?.header
-    if (!session) return false
+    if (!session) return null
 
     const globalSettings = this.options.settings.getSettings()
-    if (!isAutoCompactionEnabled(session.settings, globalSettings)) return false
+    if (!isAutoCompactionEnabled(session.settings, globalSettings)) return null
 
     const pressure = await this.measure(sessionId, session, globalSettings, pendingMessage)
-    if (!pressure) return false
+    if (!pressure) return null
     // Another thread or fork, or a different model window, starts without the earlier baseline.
     const compacted = this.compactedSizes.get(sessionId)
     const baseline =
@@ -174,7 +202,7 @@ export class CompactionService {
       compacted.usableTokens === pressure.budget.usableTokens
         ? compacted.tokens
         : undefined
-    return shouldCompactAtTokens(pressure.budget, pressure.tokens, baseline)
+    return { pressure, should: shouldCompactAtTokens(pressure.budget, pressure.tokens, baseline) }
   }
 
   private async measure(
@@ -232,7 +260,9 @@ export class CompactionService {
       return { status: 'skipped', reason: 'busy' }
     }
     if (options.abortSignal?.aborted) return { status: 'cancelled' }
-    if (request.kind === 'automatic' && !(await this.needsCompaction(sessionId, request.pendingMessage))) {
+    // Automatic compaction owns its own decision; an explicit request only needs the session.
+    const automatic = request.kind === 'automatic' ? await this.evaluate(sessionId, request.pendingMessage) : null
+    if (request.kind === 'automatic' && !automatic?.should) {
       return { status: 'skipped', reason: 'not_needed' }
     }
     if (this.ongoing.has(sessionId)) {
@@ -258,6 +288,14 @@ export class CompactionService {
         ...(request.kind === 'generation' ? { targetMessageId: request.targetMessageId } : {}),
       })
       if (!source) return this.failure('session_not_found', 'Session not found')
+
+      // A compaction replaces the covered prefix with a summary. While the previous turn's tool
+      // calls have no results yet the assistant is mid-subtask: summarizing now throws away the
+      // working state the next step needs, and the loop pays for it by re-deriving (and often
+      // redoing) the same work. Defer until the request would really crowd the window.
+      if (automatic && subtaskInProgress(source) && automatic.pressure.tokens <= getDeferredTriggerTokens(automatic.pressure.budget)) {
+        return { status: 'skipped', reason: 'not_needed' }
+      }
 
       const planned = await createCompactionPlan(source, request, (context, pendingMessage) =>
         this.options.policy.getCompactionContext(context, sessionSettings, pendingMessage)

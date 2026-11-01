@@ -4,6 +4,7 @@ import type { ModelMessage } from 'ai'
 import type { CompactionServiceResult, GenerationCompactionRequest } from '../application/context/compaction-types'
 import {
   type CompactionBudget,
+  deferCompactionBudget,
   getRetainedTailTokens,
   shouldCompactAtTokens,
 } from '../application/token-estimation/math'
@@ -21,6 +22,15 @@ import {
 export interface MidRunCompactionOptions {
   /** Null disables this run's automatic compaction. */
   budget: CompactionBudget | null
+  /**
+   * Defer to the trigger for a running subtask instead of the plain threshold.
+   *
+   * `prepareStep` only runs again when the previous step produced tool calls, so mid-run
+   * compaction is always inside a tool loop. Compacting at the plain threshold there is what
+   * cuts a subtask in half: the next step cannot see what it just learned and redoes it.
+   * Hosts that want the structural deferral set this (see `getDeferredTriggerTokens`).
+   */
+  deferWhileSubtaskActive?: boolean
   /** Counts one request message with the request's tokenizer. */
   countMessageTokens?(message: ModelMessage): number
   /** Request tokens sent outside the messages, such as tool definitions. Read once per run. */
@@ -80,9 +90,12 @@ export class MidRunCompactionController {
 
     const { budget, signal } = this.options
     if (this.failed || signal.aborted || stepNumber <= 0 || !budget) return effective
+    // A mid-run step is always a continuation of a running subtask: use the deferred trigger
+    // so a compaction happens only when the request really is about to crowd the window.
+    const gate = this.options.deferWhileSubtaskActive ? deferCompactionBudget(budget) : budget
     const overhead = await this.readRequestOverhead()
     const tokens = estimateModelMessagesTokens(effective, this.countMessage) + overhead
-    if (signal.aborted || !shouldCompactAtTokens(budget, tokens, this.compactedTokens)) return effective
+    if (signal.aborted || !shouldCompactAtTokens(gate, tokens, this.compactedTokens)) return effective
 
     // Plan against the EFFECTIVE window, then resolve the stable boundary in
     // the SDK's original transcript. This also prevents a later compact from

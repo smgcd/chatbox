@@ -3,7 +3,7 @@ import { buildCompactionHandoff } from '@shared/context/compaction-handoff'
 import type { MessageContentParts } from '@shared/types'
 import type { ModelMessage } from 'ai'
 import { describe, it } from 'vitest'
-import { getCompactionBudget } from '../application/token-estimation/math'
+import { getCompactionBudget, getDeferredTriggerTokens } from '../application/token-estimation/math'
 import { MidRunCompactionController, type MidRunCompactionOptions } from './MidRunCompactionController'
 import { collectToolCallIds, estimateModelMessagesTokens } from './mid-run-compaction'
 
@@ -104,6 +104,32 @@ function harness(contextWindow = 102_400, language?: string, extra: Partial<MidR
 }
 
 describe('MidRunCompactionController', () => {
+  it('defers a mid-run compaction until the request would really crowd the window', async () => {
+    // Every prepareStep after the first is a subtask continuation; compacting at the plain
+    // threshold there is what used to summarize a half-finished subtask away.
+    const window = 102_400
+    const h = harness(window, undefined, { deferWhileSubtaskActive: true })
+    const budget = getCompactionBudget(window)!
+    const deferred = getDeferredTriggerTokens(budget)
+    assert.ok(deferred > budget.thresholdTokens)
+
+    let crossed = false
+    for (let step = 1; step <= 40 && !crossed; step += 1) {
+      h.append(`t${step}`)
+      const tokens = estimateModelMessagesTokens(h.source)
+      const before = h.compactions
+      await h.controller.prepareStep(h.source, step)
+      if (tokens <= deferred) {
+        assert.equal(h.compactions, before, `compacted at ${tokens} tokens, under the deferred trigger ${deferred}`)
+      } else {
+        crossed = true
+      }
+    }
+
+    assert.ok(crossed, 'the run never grew past the deferred trigger')
+    assert.ok(h.compactions > 0, 'a request past the window guard must still compact')
+  })
+
   it('rejects a mismatched coverage receipt even when every current tool call stays in the tail', async () => {
     const h = harness(200)
     h.source[1] = { role: 'user', content: 'history '.repeat(1000) }

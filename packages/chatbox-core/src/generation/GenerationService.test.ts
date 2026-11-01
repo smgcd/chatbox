@@ -1482,11 +1482,14 @@ describe('GenerationService', () => {
     })
 
     it.each([
-      ['stays below', -1, false],
-      ['exceeds', 1, true],
+      ['stays below the threshold', (tokens: number) => tokens + 1, false],
+      // A mid-run step is always a subtask continuation: between the threshold and the 1.15x
+      // window guard nothing is summarized, so the running subtask keeps its working state.
+      ['passes the threshold while the subtask runs', (tokens: number) => tokens - 1, false],
+      ['passes the window guard', (tokens: number) => Math.floor(tokens / 1.2), true],
     ])(
-      'compacts mid-run only when the request %s the threshold, counting the instructions once',
-      async (_label, margin, compacts) => {
+      'compacts mid-run only when the request %s, counting the instructions once',
+      async (_label, thresholdOf, compacts) => {
         const requestTokens =
           estimateModelMessagesTokens(stepMessages, countMessage) +
           (await estimateToolDefinitionTokens(tools, countText))
@@ -1497,7 +1500,7 @@ describe('GenerationService', () => {
           summary: 'Earlier work done.',
           coverage: { ...request, boundaryMessageId: 'assistant-1' },
         }))
-        harness.setCompaction({ getBudget: () => thresholdBudget(requestTokens - margin), compact })
+        harness.setCompaction({ getBudget: () => thresholdBudget(thresholdOf(requestTokens)), compact })
         harness.setChatStreamFactory((_messages, options) =>
           (async function* streamOneToolStep() {
             for (const toolCallId of ['t1', 't2']) {

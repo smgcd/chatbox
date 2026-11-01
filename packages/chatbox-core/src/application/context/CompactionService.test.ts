@@ -13,7 +13,7 @@ import { convertLegacyTreeToRowFormat } from '../session/compatibility/row-forma
 import { describe, expect, test, vi } from 'vitest'
 import type { LoggerPort } from '../../ports'
 import type { Message, MessageFile, Session, SessionSettings, Settings } from '../../types'
-import { getCompactionBudget } from '../token-estimation/math'
+import { getCompactionBudget, getDeferredTriggerTokens } from '../token-estimation/math'
 import { selectTokenEstimationContext } from '../token-estimation/TokenEstimationService'
 import {
   type CompactionPolicyPort,
@@ -144,6 +144,38 @@ function createHarness(
 }
 
 describe('CompactionService', () => {
+  test('defers an automatic compaction while the previous turn still has an unfinished tool call', async () => {
+    const pendingCall = message('assistant-call', 'assistant')
+    pendingCall.contentParts = [
+      { type: 'tool-call', state: 'call', toolCallId: 'call-1', toolName: 'read_file', args: {} },
+    ] as Message['contentParts']
+    const harness = createHarness({
+      messages: [message('system', 'system'), message('user', 'user'), pendingCall],
+    })
+
+    // Just past the plain threshold: the subtask is mid-flight, so nothing is summarized yet.
+    harness.measure.mockReturnValue(Promise.resolve({ tokens: budget.thresholdTokens + 1, budget }))
+    expect(await harness.service.run('session-1', { kind: 'automatic' })).toEqual({
+      status: 'skipped',
+      reason: 'not_needed',
+    })
+    expect(harness.generate).not.toHaveBeenCalled()
+
+    // Past the window guard, overflow wins: it compacts anyway.
+    harness.measure.mockReturnValue(Promise.resolve({ tokens: getDeferredTriggerTokens(budget) + 1, budget }))
+    const result = await harness.service.run('session-1', { kind: 'automatic' })
+    expect(result.status).toBe('compacted')
+    expect(harness.generate).toHaveBeenCalledOnce()
+  })
+
+  test('compacts at the plain threshold once the previous turn settled', async () => {
+    const harness = createHarness()
+    harness.measure.mockReturnValue(Promise.resolve({ tokens: budget.thresholdTokens + 1, budget }))
+    const result = await harness.service.run('session-1', { kind: 'automatic' })
+    expect(result.status).toBe('compacted')
+    expect(harness.generate).toHaveBeenCalledOnce()
+  })
+
   test('rejects a retained round outside the target before generating or persisting a summary', async () => {
     const harness = createHarness()
     const result = await harness.service.run('session-1', {

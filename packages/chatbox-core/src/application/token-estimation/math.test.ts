@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_COMPACTION_THRESHOLD,
+  deferCompactionBudget,
+  DEFERRED_COMPACTION_MULTIPLIER,
   estimateTokensBySampling,
   getCompactionBudget,
+  getDeferredTriggerTokens,
   getOutputReserveTokens,
   getRetainedTailTokens,
   OUTPUT_RESERVE_TOKENS,
@@ -64,6 +67,26 @@ describe('compaction budget', () => {
     const budget = getCompactionBudget(16_384)!
     expect(getRetainedTailTokens(budget, 2_000)).toBe(6_144 - 2_000 - 1_228)
     expect(getRetainedTailTokens(budget, 10_000)).toBe(1)
+  })
+
+  it('defers the trigger while a subtask runs, but never past the usable window', () => {
+    const budget = getCompactionBudget(16_384)!
+    const deferred = getDeferredTriggerTokens(budget)
+    expect(deferred).toBe(Math.floor(budget.thresholdTokens * DEFERRED_COMPACTION_MULTIPLIER))
+    expect(deferred).toBeGreaterThan(budget.thresholdTokens)
+    expect(deferred).toBeLessThanOrEqual(budget.usableTokens)
+
+    // Between the plain threshold and the deferred trigger nothing compacts.
+    expect(shouldCompactAtTokens(budget, budget.thresholdTokens + 1)).toBe(true)
+    expect(shouldCompactAtTokens(deferCompactionBudget(budget), budget.thresholdTokens + 1)).toBe(false)
+    expect(shouldCompactAtTokens(deferCompactionBudget(budget), deferred + 1)).toBe(true)
+
+    // A window so tight that 1.15x would pass it is capped at the usable window.
+    const aggressive = getCompactionBudget(4_000, { compactionThreshold: 0.95 })!
+    expect(Math.floor(aggressive.thresholdTokens * DEFERRED_COMPACTION_MULTIPLIER)).toBeGreaterThan(
+      aggressive.usableTokens
+    )
+    expect(getDeferredTriggerTokens(aggressive)).toBe(aggressive.usableTokens)
   })
 })
 

@@ -851,6 +851,11 @@ export class GenerationService<TContext> {
               Object.keys(prepared.tools).length > 0 && isAutoCompactionEnabled(settings, globalSettings)
                 ? compaction.getBudget(settings, globalSettings)
                 : null,
+            // Every prepareStep after the first one is a continuation of a running subtask
+            // (it only runs again because the previous step asked for tools). Compacting at the
+            // plain threshold here is what used to summarize a half-finished subtask away, so
+            // defer to the real-overflow trigger instead.
+            deferWhileSubtaskActive: true,
             countMessageTokens,
             // Step messages already carry the full system instructions; only tool definitions sit outside them.
             getRequestOverheadTokens: () => readRequestOverhead().then((overhead) => overhead.toolTokens),

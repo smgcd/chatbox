@@ -101,6 +101,17 @@ export const COMPACTION_MIN_GROWTH_RATIO = 0.15
 /** Room planned for the summary text when sizing the retained tail. */
 export const COMPACTION_SUMMARY_ALLOWANCE_RATIO = 0.1
 export const COMPACTION_SUMMARY_ALLOWANCE_MAX_TOKENS = 4096
+/**
+ * Trigger multiplier used while a subtask is still running.
+ *
+ * A compaction rewrites the conversation prefix into a summary. Doing that in the middle of a
+ * subtask is what makes an agent loop lose its own working state: the next step can no longer
+ * see what it just found out, so it re-derives it, often by redoing the same reads. A token
+ * threshold alone cannot tell "mid-subtask" from "at a hand-off point", so callers that do
+ * know the structural signal defer to this higher trigger and compact only when the request
+ * would actually crowd the window.
+ */
+export const DEFERRED_COMPACTION_MULTIPLIER = 1.15
 
 export interface CompactionBudget {
   contextWindow: number
@@ -166,4 +177,18 @@ export function shouldCompactAtTokens(budget: CompactionBudget, tokens: number, 
 /** Verbatim tail kept by a compaction that leaves `fixedTokens` (system prompt, tool definitions) in place. */
 export function getRetainedTailTokens(budget: CompactionBudget, fixedTokens: number): number {
   return Math.max(1, budget.targetTokens - fixedTokens - budget.summaryAllowanceTokens)
+}
+
+/**
+ * Trigger to use while a subtask is still running: later than the normal threshold, but never
+ * past the usable window (that would be a real overflow, not a hand-off).
+ */
+export function getDeferredTriggerTokens(budget: CompactionBudget): number {
+  return Math.min(budget.usableTokens, Math.floor(budget.thresholdTokens * DEFERRED_COMPACTION_MULTIPLIER))
+}
+
+/** The same budget, with the deferral trigger as its compaction point. */
+export function deferCompactionBudget(budget: CompactionBudget): CompactionBudget {
+  const thresholdTokens = getDeferredTriggerTokens(budget)
+  return thresholdTokens > budget.thresholdTokens ? { ...budget, thresholdTokens } : budget
 }
