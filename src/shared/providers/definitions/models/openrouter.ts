@@ -89,8 +89,9 @@ export default class OpenRouter extends AbstractAISDKModel {
     const imageMetadata = providerMetadata.openrouter?.images
     if (!Array.isArray(imageMetadata)) return defaultMediaType
     const metadata = imageMetadata[index]
-    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return defaultMediaType
-    const mediaType = metadata.mediaType
+    if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata)) return defaultMediaType
+    // providerMetadata is opaque JSON: read the one field we need through an explicit shape.
+    const mediaType = (metadata as { mediaType?: unknown }).mediaType
     return typeof mediaType === 'string' && mediaType.startsWith('image/') ? mediaType : defaultMediaType
   }
 
