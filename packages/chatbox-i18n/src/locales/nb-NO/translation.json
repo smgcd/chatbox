@@ -649,6 +649,8 @@
   "Load More": "Last inn mer",
   "Load more skills": "Last inn flere ferdigheter",
   "Load Skill": "Last inn ferdighet",
+  "Search Skills": "Search Skills",
+  "Search Tools": "Search Tools",
   "Loaded {{count}} skills · Loading next batch...": "Lastet {{count}} ferdigheter · Henter neste gruppe...",
   "Loaded {{count}} skills · Reached end": "Lastet {{count}} ferdigheter · Nådde slutten",
   "Loaded {{count}} skills · Scroll to load more": "Lastet {{count}} ferdigheter · Rull for å laste inn mer",

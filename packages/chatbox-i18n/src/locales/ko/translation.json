@@ -649,6 +649,8 @@
   "Load More": "더 보기",
   "Load more skills": "스킬 더 불러오기",
   "Load Skill": "스킬 로드",
+  "Search Skills": "Search Skills",
+  "Search Tools": "Search Tools",
   "Loaded {{count}} skills · Loading next batch...": "{{count}}개의 스킬을 불러왔습니다 · 다음 배치를 불러오는 중...",
   "Loaded {{count}} skills · Reached end": "{{count}}개의 스킬을 불러왔습니다 · 마지막입니다",
   "Loaded {{count}} skills · Scroll to load more": "{{count}}개의 스킬을 불러왔습니다 · 스크롤하여 더 불러오기",

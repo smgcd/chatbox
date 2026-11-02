@@ -2050,3 +2050,79 @@ describe('buildToolsForSession script tool and sandbox guidance', () => {
     expect(result.instructions.includes('In Bash, `~` and `$HOME` point to the working directory')).toBe(bashHome)
   })
 })
+
+describe('on-demand tools and skills', () => {
+  const buildAgentTools = (overrides: Partial<BuildToolsOptions> = {}) =>
+    buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'on',
+      sessionSettings: { commandApprovalMode: 'smart' },
+      ...overrides,
+    })
+
+  test('MCP tools are registered as deferred, with the official search tool alongside', async () => {
+    getAvailableToolsMock.mockReturnValueOnce({
+      mcp__playwright__browser_click: {
+        description: 'Click an element on the page',
+        execute: async () => ({}),
+      },
+      mcp__playwright__browser_navigate: {
+        description: 'Navigate the browser to a URL',
+        execute: async () => ({}),
+      },
+    } as never)
+
+    const result = await buildAgentTools()
+
+    // Registered so a discovered tool can actually run, but flagged so the SDK keeps the
+    // definition out of the request until the model searches for it.
+    const deferredTool = result.tools.mcp__playwright__browser_click as { deferLoading?: boolean } | undefined
+    expect(deferredTool).toBeDefined()
+    expect(deferredTool?.deferLoading).toBe(true)
+
+    // The search tool itself must not defer, or nothing could ever be found.
+    const searchTool = result.tools.search_tools as { deferLoading?: boolean } | undefined
+    expect(searchTool).toBeDefined()
+    expect(searchTool?.deferLoading).not.toBe(true)
+
+    // The prompt carries names only, never the schemas' descriptions.
+    expect(result.instructions).toContain('## Tools on Demand')
+    expect(result.instructions).toContain('playwright (2): browser_click, browser_navigate')
+    expect(result.instructions).not.toContain('Click an element on the page')
+  })
+
+  test('leaving agent mode registers no search tool and no deferred marker', async () => {
+    const result = await buildToolsForSession(createMockModel(), {
+      webBrowsing: false,
+      messages: [],
+      agentMode: 'off',
+    })
+
+    expect(result.tools.search_tools).toBeUndefined()
+    expect(result.instructions).not.toContain('## Tools on Demand')
+  })
+
+  test('a long skill list keeps names only and offers search_skills', async () => {
+    const skills = Array.from({ length: 8 }, (_, index) => ({
+      name: `skill-${index}`,
+      description: `Description number ${index}`,
+    }))
+    discoverSkillsMock.mockResolvedValue(skills)
+    getSettingsMock.mockReturnValue({ skills: { enabledSkillNames: skills.map((skill) => skill.name) } })
+
+    const result = await buildAgentTools()
+
+    expect(result.instructions).toContain('- skill-0')
+    expect(result.instructions).not.toContain('Description number 0')
+    expect(result.instructions).toContain('search_skills')
+    expect(result.tools.search_skills).toBeDefined()
+  })
+
+  test('a short skill list still carries descriptions', async () => {
+    const result = await buildAgentTools()
+
+    expect(result.instructions).toContain('- **test-skill**: A test skill')
+    expect(result.tools.search_skills).toBeUndefined()
+  })
+})

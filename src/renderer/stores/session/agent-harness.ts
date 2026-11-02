@@ -505,6 +505,8 @@ export async function prepareAgentGenerationHarness(
     chatOptions.tools = tools as ToolSet
   }
 
+  // Deferred MCP tools need no gating here: the AI SDK removes un-discovered deferred
+  // definitions from each request inside the generation loop (prepareToolSearch).
   const allToolNames = Object.keys(tools)
   if (allToolNames.includes('chatbox_cli')) {
     chatOptions.prepareStep = ({ steps }) => {

@@ -649,6 +649,8 @@
   "Load More": "さらに読み込む",
   "Load more skills": "スキルをさらに読み込む",
   "Load Skill": "スキルを読み込む",
+  "Search Skills": "Search Skills",
+  "Search Tools": "Search Tools",
   "Loaded {{count}} skills · Loading next batch...": "{{count}}個のスキルを読み込みました · 次のバッチを読み込み中...",
   "Loaded {{count}} skills · Reached end": "{{count}}個のスキルを読み込みました · 終了に到達しました",
   "Loaded {{count}} skills · Scroll to load more": "{{count}}個のスキルを読み込みました · スクロールしてさらに読み込む",

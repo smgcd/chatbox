@@ -37,6 +37,14 @@ import {
   isViewImageAvailable,
   withImageFileReading,
 } from '@/packages/model-calls/toolsets/view-image'
+import { buildSkillSearchTool, SEARCH_SKILLS_TOOL_NAME } from '@/packages/model-calls/toolsets/skill-search'
+import {
+  buildDeferredToolsInstruction,
+  buildToolSearchTool,
+  describeDeferredTool,
+  markToolsAsDeferred,
+  SEARCH_TOOLS_TOOL_NAME,
+} from '@/packages/model-calls/toolsets/tool-search'
 import { parseLinkTool, webSearchTool } from '@/packages/model-calls/toolsets/web-search'
 import { buildWorkspaceInstructions } from '@/packages/model-calls/workspace-instructions'
 import { skillsController, subscribeSkillsChanged } from '@/packages/skills/controller'
@@ -54,6 +62,13 @@ import { settingsStore } from '@/stores/settingsStore'
 let cachedSkills: Array<{ name: string; description: string }> | null = null
 let cachedSkillsTimestamp = 0
 const SKILLS_CACHE_TTL = 30_000 // 30 seconds
+
+/**
+ * Skills up to this count keep their description in the prompt; beyond it the prompt lists
+ * names only and search_skills resolves descriptions on demand. A short list is cheaper to
+ * read in full than an extra round trip per task.
+ */
+const COMPACT_SKILL_LIST_THRESHOLD = 6
 
 async function getDiscoveredSkills(): Promise<Array<{ name: string; description: string }>> {
   const now = Date.now()
@@ -202,7 +217,8 @@ function buildSkillToolsInstruction(
   harmonyNodeExecution: boolean,
   sandboxCodeExecutionFallback: boolean,
   skillStagingDirectory: string | null,
-  sandboxAvailable: boolean
+  sandboxAvailable: boolean,
+  compactSkillList: boolean
 ): string {
   let instruction = `
 ## Skills
@@ -210,7 +226,15 @@ You have access to skills that can extend your capabilities.
 `
 
   if (enabledSkills.length > 0) {
-    instruction += `
+    instruction += compactSkillList
+      ? `
+### Available Skills
+${enabledSkills.length} skills are enabled. Only their names are listed here; descriptions are loaded on demand.
+${enabledSkills.map((s) => `- ${s.name}`).join('\n')}
+
+Call load_skill with the name as soon as a skill clearly matches the task. If the name alone does not tell you whether a skill applies, call ${SEARCH_SKILLS_TOOL_NAME} with a short keyword first, then load_skill the best match. Most tasks need no skill at all.
+`
+      : `
 ### Available Skills
 ${enabledSkills.map((s) => `- **${s.name}**: ${s.description}`).join('\n')}
 
@@ -438,12 +462,17 @@ When you create a Git commit that includes code changes, append this exact trail
   // MCP tools: agent mode only, requires model support. Servers muted for this
   // chat are removed from the allowlist here, so a session can keep Work Mode
   // (code execution, skills, files) while withholding individual MCP tool sets.
+  let deferredMcpTools: ToolSet | null = null
   if (includeAgentTools) {
     const mutedServers = options.sessionSettings?.disabledMcpServers
     const allowedServers = mutedServers?.length
       ? new Set([...mcpController.servers.keys()].filter((id) => !mutedServers.includes(id)))
       : undefined
-    tools = { ...mcpController.getAvailableTools(allowedServers) }
+    // Deferred: the SDK keeps these definitions out of the request until search_tools
+    // discovers them, so their schemas are not paid for on every message.
+    const mcpTools = markToolsAsDeferred(mcpController.getAvailableTools(allowedServers))
+    deferredMcpTools = mcpTools
+    tools = { ...mcpTools }
   }
 
   // Web search: works independently of agent mode
@@ -606,6 +635,10 @@ When you create a Git commit that includes code changes, append this exact trail
       ...toolsetSkills,
     ]
     const userExecWorkingDirectory = options.sessionSettings?.workingDirectories?.find((dir) => dir.trim().length > 0)
+    // Descriptions are what makes a skill matching work, but a long list of them costs more
+    // prompt than the tool catalog. Past a handful of skills, list names only and let
+    // search_skills return descriptions on demand.
+    const compactSkillList = enabledSkills.length > COMPACT_SKILL_LIST_THRESHOLD
     instructions += buildSkillToolsInstruction(
       enabledSkills,
       commandApprovalMode === 'full_access',
@@ -614,9 +647,13 @@ When you create a Git commit that includes code changes, append this exact trail
       harmonyNodeExecution,
       sandboxCodeExecutionFallback,
       sandboxWorkingDirectory,
-      codeExecution !== undefined
+      codeExecution !== undefined,
+      compactSkillList
     )
     tools.load_skill = buildLoadSkillTool(options, toolsetSkills)
+    if (compactSkillList) {
+      tools[SEARCH_SKILLS_TOOL_NAME] = buildSkillSearchTool(enabledSkills)
+    }
     if (enabledSkills.some((skill) => skill.name === 'chatbox-product-info')) {
       const chatboxCliToolSet = buildChatboxCliToolSet({
         sessionId: options.sessionId,
@@ -654,11 +691,28 @@ When you create a Git commit that includes code changes, append this exact trail
     tools = { ...tools, ...memoryToolSet.tools }
   }
 
+  // On-demand MCP tools: the definitions are already marked deferred above; the search tool is
+  // what makes them discoverable, and the prompt keeps a name-only catalog so a search can be
+  // aimed at the right tool without shipping every schema.
+  if (includeAgentTools && deferredMcpTools) {
+    const deferredEntries = Object.entries(deferredMcpTools).map(([name, tool]) =>
+      describeDeferredTool(name, typeof tool.description === 'string' ? tool.description : '')
+    )
+    if (deferredEntries.length > 0) {
+      tools[SEARCH_TOOLS_TOOL_NAME] = buildToolSearchTool()
+      instructions += buildDeferredToolsInstruction(deferredEntries)
+    }
+  }
+
   if (Object.keys(tools).length > 0) {
     instructions = buildToolUseCommunicationInstruction() + instructions
   }
 
-  return { tools, instructions, ...(prepareStepMessages ? { prepareStepMessages } : {}) }
+  return {
+    tools,
+    instructions,
+    ...(prepareStepMessages ? { prepareStepMessages } : {}),
+  }
 }
 
 /**
@@ -672,7 +726,8 @@ function buildLoadSkillTool(
   return {
     description:
       "Load a skill by name to get its full instructions. Call this when the user's request " +
-      'matches an available skill. Available skills are listed in the system instructions.',
+      'matches an available skill. Enabled skill names are listed in the system instructions; ' +
+      `${SEARCH_SKILLS_TOOL_NAME} returns their descriptions.`,
     inputSchema: validatedToolSchema({
       type: 'object',
       properties: {
@@ -691,7 +746,7 @@ function buildLoadSkillTool(
       const skillSettings = settingsStore.getState().getSettings().skills
       if (!skillSettings.enabledSkillNames.includes(skillInput.name)) {
         return {
-          error: `Skill "${skillInput.name}" is not enabled. Check available skills in the system instructions.`,
+          error: `Skill "${skillInput.name}" is not enabled. Call ${SEARCH_SKILLS_TOOL_NAME} to list the enabled skills and their descriptions.`,
         }
       }
 

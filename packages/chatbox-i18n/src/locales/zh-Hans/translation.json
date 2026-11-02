@@ -649,6 +649,8 @@
   "Load More": "加载更多",
   "Load more skills": "加载更多技能",
   "Load Skill": "加载 Skill",
+  "Search Skills": "搜索 Skill",
+  "Search Tools": "搜索工具",
   "Loaded {{count}} skills · Loading next batch...": "已加载 {{count}} 个技能 · 正在加载下一批...",
   "Loaded {{count}} skills · Reached end": "已加载 {{count}} 个技能 · 已到末尾",
   "Loaded {{count}} skills · Scroll to load more": "已加载 {{count}} 个技能 · 滚动加载更多",
