@@ -23,9 +23,10 @@ import type {
   RemoteSessionView,
 } from '@shared/remote-host'
 import { buildProgressEvent, digestSession } from '@shared/remote-host'
+import type { SessionHeader, SessionTranscriptCursor } from '@chatbox/core/ports'
 import type { CommandApprovalMode } from '@shared/types/command-execution'
 import { resolveCommandApprovalMode } from '@shared/types/command-execution'
-import { createMessage, type Session } from '@shared/types'
+import { createMessage, type Message, type Session } from '@shared/types'
 import { currentGenerationService } from '@/adapters/CurrentGenerationService'
 import { rendererApplication } from '@/app/renderer-application'
 import { getLogger } from '@/lib/utils'
@@ -62,17 +63,46 @@ let idleTicks = 0
 let wasActive = false
 
 /**
+ * The row-backed session store has no `getSession`/`getCachedSession` on the
+ * query bridge (that API belonged to the pre-split session cache). Read the
+ * header through the session service, and page the active thread's transcript
+ * from the tail when the messages themselves are needed.
+ */
+async function readSessionHeader(sessionId: string): Promise<SessionHeader | null> {
+  const read = await rendererApplication.sessions.getSessionHeader(sessionId)
+  return read?.header ?? null
+}
+
+/** All messages on the active thread's selected path, oldest first. */
+async function readAllThreadMessages(sessionId: string): Promise<Message[]> {
+  const messages: Message[] = []
+  let cursor: SessionTranscriptCursor | undefined
+  for (let page = 0; page < 100; page += 1) {
+    const result = await rendererApplication.sessions.readSessionTranscriptWindow({
+      sessionId,
+      limit: 100,
+      ...(cursor ? { cursor } : { origin: 'tail' as const }),
+    })
+    if (!result) break
+    messages.unshift(...result.messages.map((row) => row.message))
+    cursor = result.older ?? undefined
+    if (!cursor) break
+  }
+  return messages
+}
+
+/**
  * The hidden window has no chat route mounted, so the auto-title effect never
  * runs on its own; ask the official naming service directly once a session has
  * content.
  */
-function maybeAutoTitle(sessionId: string): void {
+async function maybeAutoTitle(sessionId: string): Promise<void> {
   try {
-    const session = rendererApplication.sessionQueryBridge.getCachedSession(sessionId)
-    if (!session || !session.messages?.length) return
-    const name = (session.name ?? '').trim()
+    const header = await readSessionHeader(sessionId)
+    if (!header) return
+    const name = (header.name ?? '').trim()
     if (name && name !== 'Untitled' && name !== 'New Chat') return
-    syncSessionAutoTitle(session)
+    await syncSessionAutoTitle(sessionId)
   } catch (error) {
     log.error('auto title failed', { sessionId, error })
   }
@@ -84,22 +114,43 @@ function stopProgress(): void {
   progressSessionId = null
   idleTicks = 0
   wasActive = false
+  progressRevision = -1
+  progressActive = false
 }
 
-/** Returns true while the message is still producing (streaming or tools running). */
-function pushProgressFrame(sessionId: string): boolean {
-  // getCachedSession is the same React Query cache that updateStreamingCache
-  // writes on every chunk, so this frame is as fresh as the desktop UI.
-  const session = rendererApplication.sessionQueryBridge.getCachedSession(sessionId)
-  if (!session) return false
-  const messages = session.messages ?? []
+let progressRevision = -1
+let progressActive = false
+
+/**
+ * Returns true while the message is still producing (streaming or tools running).
+ *
+ * The row store persists streaming chunks on its own cadence, so a header read
+ * (cheap) gates the transcript read: while the committed revision is unchanged
+ * the previous frame's verdict still holds and nothing is re-read or re-sent.
+ */
+async function pushProgressFrame(sessionId: string): Promise<boolean> {
+  const headerRead = await rendererApplication.sessions.getSessionHeader(sessionId)
+  if (!headerRead) return false
+  if (headerRead.revision === progressRevision) return progressActive
+  progressRevision = headerRead.revision
+  const page = await rendererApplication.sessions.readSessionTranscriptWindow({
+    sessionId,
+    limit: 20,
+    origin: 'tail',
+  })
+  const messages = page?.messages ?? []
   for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index]
+    const message = messages[index].message
     if (message.role !== 'assistant') continue
     const event = buildProgressEvent(sessionId, message)
     emitProgress(event)
-    return event.generating || event.tools.some((tool) => tool.state === 'call')
+    progressActive =
+      event.generating ||
+      headerRead.control.generatingAssistantCount > 0 ||
+      event.tools.some((tool) => tool.state === 'call')
+    return progressActive
   }
+  progressActive = false
   return false
 }
 
@@ -115,20 +166,22 @@ function ensureProgress(sessionId: string): void {
       stopProgress()
       return
     }
-    let active = false
-    try {
-      active = pushProgressFrame(progressSessionId)
-    } catch (error) {
-      log.error('progress tick failed', { error })
-    }
-    idleTicks = active ? 0 : idleTicks + 1
-    if (wasActive && !active && progressSessionId) {
-      maybeAutoTitle(progressSessionId)
-    }
-    wasActive = active
-    if (idleTicks >= IDLE_TICKS_BEFORE_STOP) {
-      stopProgress()
-    }
+    void (async () => {
+      let active = false
+      try {
+        active = await pushProgressFrame(progressSessionId as string)
+      } catch (error) {
+        log.error('progress tick failed', { error })
+      }
+      idleTicks = active ? 0 : idleTicks + 1
+      if (wasActive && !active && progressSessionId) {
+        void maybeAutoTitle(progressSessionId)
+      }
+      wasActive = active
+      if (idleTicks >= IDLE_TICKS_BEFORE_STOP) {
+        stopProgress()
+      }
+    })()
   }, PROGRESS_INTERVAL_MS)
 }
 
@@ -138,7 +191,7 @@ function ensureProgress(sessionId: string): void {
  * starts, so this is best-effort (new sessions always succeed).
  */
 async function forceAgentModeOn(sessionId: string): Promise<void> {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await readSessionHeader(sessionId)
   if (!session) return
   const entry = getSessionAgentModeEntry(sessionId, session)
   if (entry.value === 'on' || entry.locked) {
@@ -181,14 +234,14 @@ function primeNewSessionDefaults(): void {
 
 async function ensureWorkModeSettings(sessionId: string): Promise<void> {
   try {
-    const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+    const session = await readSessionHeader(sessionId)
     if (!session) return
     if (!getSessionWebBrowsing(sessionId, session.settings?.provider)) {
       uiStore.getState().setSessionWebBrowsing(sessionId, true)
       log.info('work mode: enabled web browsing', { sessionId })
     }
     if (resolveCommandApprovalMode(session.settings ?? {}) === WORK_APPROVAL_MODE) return
-    await rendererApplication.sessions.updateSession(sessionId, (current) => {
+    await rendererApplication.sessions.updateSessionHeader(sessionId, (current) => {
       if (!current) throw new Error('Session not found')
       return {
         ...current,
@@ -206,7 +259,7 @@ async function ensureWorkModeSettings(sessionId: string): Promise<void> {
   }
 }
 
-function readCapabilities(session: Session): RemoteCapabilities {
+function readCapabilities(session: Pick<Session, 'id' | 'settings'>): RemoteCapabilities {
   const entry = getSessionAgentModeEntry(session.id, session)
   let skills = 0
   let mcp = 0
@@ -230,20 +283,25 @@ function readCapabilities(session: Session): RemoteCapabilities {
 }
 
 async function readSession(sessionId: string): Promise<RemoteSessionView | null> {
-  const session = await rendererApplication.sessionQueryBridge.getSession(sessionId)
+  const session = await readSessionHeader(sessionId)
   if (!session) return null
   // Opening a session in the remote host applies the work-mode policy, so the
   // capability chips never claim something the next turn would not do.
   await ensureWorkModeSettings(sessionId)
-  const patched = await rendererApplication.sessionQueryBridge.getSession(sessionId)
-  const current = patched ?? session
-  const digest = digestSession(current)
+  const current = (await readSessionHeader(sessionId)) ?? session
+  const messages = await readAllThreadMessages(sessionId)
+  const digest = digestSession({
+    id: current.id,
+    name: current.name ?? undefined,
+    createdAt: current.createdAt,
+    messages,
+  })
   const agentModeEntry = getSessionAgentModeEntry(sessionId, current)
   // Opening a session that is mid-generation should start streaming right away.
   if (digest.generating || digest.busy) {
     ensureProgress(sessionId)
   } else {
-    maybeAutoTitle(sessionId)
+    void maybeAutoTitle(sessionId)
   }
   return {
     ...digest,
