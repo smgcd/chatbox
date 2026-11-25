@@ -24,6 +24,10 @@ export interface RemoteHostCommand {
   sessionId?: string
   text?: string
   name?: string
+  /** Model provider id for create-session / send-message (e.g. 'deepseek', a custom provider id). */
+  provider?: string
+  /** Model id within the provider for create-session / send-message. */
+  model?: string
   /** AgentModeValue for set-agent-mode. */
   value?: string
   messageId?: string
@@ -67,6 +71,10 @@ export interface RemoteSessionDigest {
   id: string
   name: string
   createdAt?: number
+  /** Model provider id the session is currently set to. */
+  provider?: string
+  /** Model id the session is currently set to. */
+  modelId?: string
   /** 'auto' | 'on' | 'off' */
   agentMode?: string
   /** True while the session is locked from switching agent mode. */
@@ -203,6 +211,8 @@ export function digestSession(session: {
   id: string
   name?: string
   createdAt?: number
+  provider?: string
+  modelId?: string
   messages?: Message[]
 }): RemoteSessionDigest {
   const messages = (session.messages ?? []).map(digestMessage)
@@ -212,6 +222,8 @@ export function digestSession(session: {
     id: session.id,
     name: session.name ?? '',
     createdAt: session.createdAt,
+    provider: session.provider,
+    modelId: session.modelId,
     generating,
     busy,
     messages,

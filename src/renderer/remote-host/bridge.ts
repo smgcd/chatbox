@@ -259,6 +259,27 @@ async function ensureWorkModeSettings(sessionId: string): Promise<void> {
   }
 }
 
+/**
+ * Applies a caller-chosen model (provider and/or model id) to a session.
+ * Written through the header, the same store the model selector writes, so
+ * the next generation in this session uses the chosen provider API.
+ */
+async function applyModelSelection(sessionId: string, provider?: string, model?: string): Promise<void> {
+  if (!provider && !model) return
+  await rendererApplication.sessions.updateSessionHeader(sessionId, (current) => {
+    if (!current) throw new Error('Session not found')
+    return {
+      ...current,
+      settings: {
+        ...current.settings,
+        ...(provider ? { provider } : {}),
+        ...(model ? { modelId: model } : {}),
+      },
+    }
+  })
+  log.info('remote model selection applied', { sessionId, provider, modelId: model })
+}
+
 function readCapabilities(session: Pick<Session, 'id' | 'settings'>): RemoteCapabilities {
   const entry = getSessionAgentModeEntry(session.id, session)
   let skills = 0
@@ -294,6 +315,8 @@ async function readSession(sessionId: string): Promise<RemoteSessionView | null>
     id: current.id,
     name: current.name ?? undefined,
     createdAt: messages[0]?.timestamp,
+    provider: current.settings?.provider,
+    modelId: current.settings?.modelId,
     messages,
   })
   const agentModeEntry = getSessionAgentModeEntry(sessionId, current)
@@ -329,9 +352,11 @@ async function handleCommand(command: RemoteHostCommand): Promise<unknown> {
 
     case 'create-session': {
       const session = await createEmpty('chat')
+      await applyModelSelection(session.id, command.provider, command.model)
       await ensureWorkModeSettings(session.id)
       await forceAgentModeOn(session.id)
-      return { sessionId: session.id }
+      const header = await readSessionHeader(session.id)
+      return { sessionId: session.id, provider: header?.settings?.provider, modelId: header?.settings?.modelId }
     }
 
     case 'send-message': {
@@ -342,6 +367,7 @@ async function handleCommand(command: RemoteHostCommand): Promise<unknown> {
       // command, and nobody is at the desk to click that dialog.
       await ensureWorkModeSettings(command.sessionId)
       await forceAgentModeOn(command.sessionId)
+      await applyModelSelection(command.sessionId, command.provider, command.model)
       const newUserMsg = createMessage('user', text)
       // Generation can run for minutes; the UI never awaits it either. Reply
       // immediately and let the client follow the stream.
