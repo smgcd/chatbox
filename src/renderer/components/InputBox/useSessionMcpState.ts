@@ -84,14 +84,14 @@ export function useSessionMcpState(sessionId: string, options: { includeBuiltin?
         return
       }
       try {
-        await rendererApplication.sessions.updateSession(sessionId, (session) => {
-          if (!session) {
+        await rendererApplication.sessions.updateSessionHeader(sessionId, (current) => {
+          if (!current) {
             throw new Error('Session not found')
           }
           return {
-            ...session,
+            ...current,
             settings: {
-              ...session.settings,
+              ...current.settings,
               // Stay absent when nothing is muted so untouched chats keep following
               // the global list instead of storing an empty array.
               disabledMcpServers: next.length > 0 ? next : undefined,

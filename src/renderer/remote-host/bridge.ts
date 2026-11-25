@@ -293,7 +293,7 @@ async function readSession(sessionId: string): Promise<RemoteSessionView | null>
   const digest = digestSession({
     id: current.id,
     name: current.name ?? undefined,
-    createdAt: current.createdAt,
+    createdAt: messages[0]?.timestamp,
     messages,
   })
   const agentModeEntry = getSessionAgentModeEntry(sessionId, current)
